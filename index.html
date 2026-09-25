@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Seznam hráčů – FK Slovany Pardubice</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <style>
     :root { --accent: #00FFFF; --bg: #0b0d10; --card: #1a1e23; --border: #262b31; --text: #eef1f3; --muted: #9aa2ab; --green: #34D399; --red: #f87171; }
     * { box-sizing: border-box; }
@@ -15,7 +17,7 @@
     .brand { display: flex; align-items: center; gap: 10px; }
     .brand .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: #06181a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
     .brand .name { font-weight: 600; font-size: 14px; }
-    .brand .icons { display: none; }
+    .brand .icons { display: flex; gap: 8px; margin-left: auto; }
     .icon-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
     .icon-btn:disabled { opacity: .45; cursor: default; }
     .season { font-size: 11px; color: var(--muted); }
@@ -69,6 +71,34 @@
     ::-webkit-scrollbar { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+    /* Selection / sharing toolbar */
+    .toolbar-btn { width: auto; padding: 8px 14px; font-size: 12px; white-space: nowrap; font-family: inherit; }
+    .toolbar-btn:disabled { opacity: .4; cursor: default; }
+    .pc-check { width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+    .sel-count { font-size: 12px; color: var(--accent); font-weight: 600; align-self: center; }
+
+    /* Map view */
+    #mapContainer { background: var(--card); }
+    .leaflet-popup-content-wrapper { background: #1a1e23; color: #eef1f3; border-radius: 10px; }
+    .leaflet-popup-tip { background: #1a1e23; }
+    .leaflet-popup-content { font-family: 'Poppins', sans-serif; font-size: 12px; }
+    .leaflet-popup-content b { font-size: 13px; }
+    .leaflet-container a.leaflet-popup-close-button { color: #9aa2ab; }
+
+    /* Print-only share view (player card / roster list as PDF via browser print) */
+    #printArea { display: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 16px; color: #000; background: #fff; font-family: Arial, Helvetica, sans-serif; }
+      #printArea h1 { font-size: 18px; margin: 0 0 4px; }
+      #printArea h2 { font-size: 14px; margin: 18px 0 6px; }
+      #printArea .meta { font-size: 11px; color: #444; margin-bottom: 14px; }
+      #printArea table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 4px; }
+      #printArea th, #printArea td { border: 1px solid #999; padding: 5px 8px; text-align: left; }
+      #printArea th { background: #eee; }
+    }
+
     /* Sign-in screen */
     .signin-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; text-align: center; padding: 20px; }
     .signin-screen .logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent); color: #06181a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; }
@@ -117,7 +147,7 @@
           <button class="icon-btn" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
-          <button class="icon-btn" type="button" disabled aria-label="Mapa hráčů" title="Mapa hráčů — připravujeme">
+          <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
           </button>
           <button class="icon-btn" type="button" disabled aria-label="Nastavení" title="Nastavení — připravujeme">
@@ -133,6 +163,8 @@
       <div class="loading" id="loadingMsg">Načítám data ze Sheetu…</div>
     </div>
   </div>
+
+  <div id="printArea"></div>
 
 <script>
   // ---------- Config ----------
@@ -155,9 +187,10 @@
   };
 
   var DATA = null;
-  var state = { category: 'Vše', rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null };
+  var state = { category: 'Vše', rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {} };
   var tokenClient = null;
   var accessToken = null;
+  var mapInstance = null, markersLayer = null, geocodeCache = {}, mapLoadToken = 0;
 
   window.onerror = function(msg, src, line, col, err) {
     var el = document.getElementById('main');
@@ -489,12 +522,165 @@
     render();
   }
 
+  function openMap() {
+    state.view = 'map';
+    render();
+  }
+
+  // ---------- Selection mode (for PDF sharing) ----------
+  function toggleSelectMode() {
+    state.selectMode = !state.selectMode;
+    if (!state.selectMode) state.selected = {};
+    render();
+  }
+
+  function toggleSelect(sheetRow) {
+    state.selected[sheetRow] = !state.selected[sheetRow];
+    render();
+  }
+
+  function selectAllFiltered() {
+    filteredPlayers().forEach(function(p) { state.selected[p.sheetRow] = true; });
+    render();
+  }
+
+  function clearSelection() {
+    state.selected = {};
+    render();
+  }
+
+  function selectedPlayers() {
+    return DATA.players.filter(function(p) { return !!state.selected[p.sheetRow]; });
+  }
+
+  // ---------- Sharing as PDF (uses the browser's own print-to-PDF, no library needed) ----------
+  function sharePlayersPDF() {
+    var players = selectedPlayers();
+    if (!players.length) return;
+    var title = state.category !== 'Vše' ? ('Soupiska: ' + state.category) : 'Soupiska hráčů';
+    var rows = players.map(function(p, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.jmenoCele) + '</td><td>' + esc(p.categoryGroup) + '</td><td>' + esc(p.rok) + '</td><td>' + esc(p.datumNarozeni) + '</td><td>' + esc(p.mesto) + '</td></tr>';
+    }).join('');
+    var html = '<h1>FK Slovany Pardubice</h1>' +
+      '<div class="meta">' + esc(title) + ' · vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + ' · ' + players.length + ' hráčů</div>' +
+      '<table><thead><tr><th>Č.</th><th>Jméno</th><th>Kategorie</th><th>Ročník</th><th>Datum narození</th><th>Obec</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    document.getElementById('printArea').innerHTML = html;
+    window.print();
+  }
+
+  function sharePlayerCardPDF() {
+    var p = DATA.players.find(function(x) { return x.sheetRow === state.selectedRow; });
+    if (!p) return;
+    var c = checklistCounts(p);
+    var checklistRows = Object.keys(p.checklist).map(function(key) {
+      var label = CHECKLIST_LABELS[key] || key;
+      return '<tr><td>' + esc(label) + '</td><td>' + (p.checklist[key] ? 'Ano' : 'Ne') + '</td></tr>';
+    }).join('');
+    var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+    var html = '<h1>FK Slovany Pardubice — Karta hráče</h1>' +
+      '<div class="meta">Vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + '</div>' +
+      '<table><tbody>' +
+        '<tr><td><b>Jméno</b></td><td>' + esc(p.jmenoCele) + '</td></tr>' +
+        '<tr><td><b>Kategorie</b></td><td>' + esc(p.categoryGroup) + ' (' + esc(p.kategorie) + ')</td></tr>' +
+        '<tr><td><b>Ročník</b></td><td>' + esc(p.rok) + '</td></tr>' +
+        '<tr><td><b>Datum narození</b></td><td>' + esc(p.datumNarozeni) + (p.vek ? ' (' + esc(p.vek) + ' let)' : '') + '</td></tr>' +
+        '<tr><td><b>ID</b></td><td>' + (esc(p.id) || '—') + '</td></tr>' +
+        '<tr><td><b>Adresa</b></td><td>' + (esc(addressLine) || '—') + '</td></tr>' +
+        '<tr><td><b>Telefon hráče</b></td><td>' + (esc(p.telefonHrac) || '—') + '</td></tr>' +
+        '<tr><td><b>E-mail hráče</b></td><td>' + (esc(p.emailHrac) || '—') + '</td></tr>' +
+        '<tr><td><b>Zákonný zástupce</b></td><td>' + (esc(p.zastupceJmeno) || '—') + '</td></tr>' +
+        '<tr><td><b>Telefon zástupce</b></td><td>' + (esc(p.zastupceTelefon) || '—') + '</td></tr>' +
+        '<tr><td><b>E-mail zástupce</b></td><td>' + (esc(p.zastupceEmail) || '—') + '</td></tr>' +
+      '</tbody></table>' +
+      '<h2>Registrační checklist (' + c.done + '/' + c.total + ')</h2>' +
+      '<table><thead><tr><th>Položka</th><th>Splněno</th></tr></thead><tbody>' + checklistRows + '</tbody></table>';
+    document.getElementById('printArea').innerHTML = html;
+    window.print();
+  }
+
+  // ---------- Mapa hráčů (Leaflet + OpenStreetMap, addresses geocoded client-side) ----------
+  function loadGeocodeCache() {
+    try { geocodeCache = JSON.parse(localStorage.getItem('fks_geocode_cache') || '{}'); } catch (e) { geocodeCache = {}; }
+  }
+  function saveGeocodeCache() {
+    try { localStorage.setItem('fks_geocode_cache', JSON.stringify(geocodeCache)); } catch (e) {}
+  }
+  function addressKey(p) {
+    return [p.ulice, p.cp, p.mesto, p.psc].filter(Boolean).join(', ');
+  }
+  function geocodeAddress(addr) {
+    if (Object.prototype.hasOwnProperty.call(geocodeCache, addr)) return Promise.resolve(geocodeCache[addr]);
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cz&q=' + encodeURIComponent(addr);
+    return fetch(url, { headers: { 'Accept-Language': 'cs' } }).then(function(r) { return r.json(); }).then(function(data) {
+      var loc = (data && data[0]) ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+      geocodeCache[addr] = loc;
+      saveGeocodeCache();
+      return loc;
+    }).catch(function() {
+      geocodeCache[addr] = null;
+      saveGeocodeCache();
+      return null;
+    });
+  }
+  function initMapIfNeeded() {
+    if (mapInstance) { setTimeout(function() { mapInstance.invalidateSize(); }, 0); return; }
+    mapInstance = L.map('mapContainer').setView([50.0343, 15.7812], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+      maxZoom: 19
+    }).addTo(mapInstance);
+    markersLayer = L.layerGroup().addTo(mapInstance);
+  }
+  function plotPlayersOnMap(players) {
+    var myToken = ++mapLoadToken;
+    loadGeocodeCache();
+    markersLayer.clearLayers();
+    var statusEl = document.getElementById('mapStatus');
+    var done = 0, shown = 0, bounds = [];
+    function step(i) {
+      if (myToken !== mapLoadToken) return; // a newer map load superseded this one
+      if (i >= players.length) {
+        if (statusEl) statusEl.textContent = shown + ' z ' + players.length + ' hráčů zobrazeno na mapě (podle adresy).';
+        if (bounds.length) mapInstance.fitBounds(bounds, { padding: [30, 30] });
+        return;
+      }
+      var p = players[i];
+      var addr = addressKey(p);
+      if (!addr) { done++; return step(i + 1); }
+      var wasCached = Object.prototype.hasOwnProperty.call(geocodeCache, addr);
+      geocodeAddress(addr).then(function(loc) {
+        if (myToken !== mapLoadToken) return;
+        done++;
+        if (statusEl) statusEl.textContent = 'Načítám polohy hráčů… ' + done + '/' + players.length;
+        if (loc) {
+          var marker = L.circleMarker([loc.lat, loc.lon], { radius: 7, color: p.categoryColor, fillColor: p.categoryColor, fillOpacity: 0.85, weight: 2 });
+          marker.bindPopup('<b>' + esc(p.jmenoCele) + '</b><br>' + esc(p.categoryGroup) + (p.mesto ? ' · ' + esc(p.mesto) : ''));
+          marker.addTo(markersLayer);
+          bounds.push([loc.lat, loc.lon]);
+          shown++;
+        }
+        if (wasCached) step(i + 1); else setTimeout(function() { step(i + 1); }, 1100);
+      });
+    }
+    step(0);
+  }
+  function renderMapView() {
+    return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám polohy hráčů…</div></div>' +
+      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.category === 'Vše' ? 'všechny kategorie' : state.category) + '). Polohy jsou přibližné odhady podle adresy, zdroj: OpenStreetMap.</div>' +
+      '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
+  }
+
   function renderListView() {
     var players = filteredPlayers();
+    var selCount = Object.keys(state.selected).filter(function(k) { return state.selected[k]; }).length;
     var rows = players.map(function(p) {
       var c = checklistCounts(p);
       var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
-      return '<div class="player-card" onclick="openDetail(' + p.sheetRow + ')">' +
+      var checkboxHtml = state.selectMode ?
+        '<input type="checkbox" class="pc-check" onclick="event.stopPropagation(); toggleSelect(' + p.sheetRow + ')"' + (state.selected[p.sheetRow] ? ' checked' : '') + '>' : '';
+      var clickAction = state.selectMode ? 'toggleSelect(' + p.sheetRow + ')' : 'openDetail(' + p.sheetRow + ')';
+      return '<div class="player-card" onclick="' + clickAction + '">' +
+        checkboxHtml +
         '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + esc(initials(p.jmenoCele)) + '</div></div>' +
         '<span class="pc-name">' + esc(p.jmenoCele) + '</span>' +
         '<span class="pc-birth">' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</span>' +
@@ -502,7 +688,20 @@
       '</div>';
     }).join('');
 
+    var toolbar = state.selectMode ?
+      ('<div class="filters" style="align-items:center;">' +
+        '<button class="icon-btn toolbar-btn" onclick="selectAllFiltered()">Vybrat vše (' + players.length + ')</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="clearSelection()">Zrušit výběr</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="sharePlayersPDF()"' + (selCount ? '' : ' disabled') + '>Sdílet jako PDF</button>' +
+        '<span class="sel-count">Vybráno: ' + selCount + '</span>' +
+        '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()" style="margin-left:auto;">Hotovo</button>' +
+      '</div>') :
+      ('<div class="filters" style="align-items:center;">' +
+        '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()">Vybrat hráče a sdílet jako PDF</button>' +
+      '</div>');
+
     return '<div class="header"><h1>Aktivní hráči</h1><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
+      toolbar +
       '<div class="filters">' +
         '<input type="search" id="search" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
         '<select id="rokFilter"></select>' +
@@ -528,7 +727,10 @@
 
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
 
-    return '<button class="detail-back" onclick="backToList()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
+    return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">' +
+        '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="sharePlayerCardPDF()">Sdílet kartu (PDF)</button>' +
+      '</div>' +
       '<div class="detail-head">' +
         '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + esc(initials(p.jmenoCele)) + '</div></div>' +
         '<div>' +
@@ -555,14 +757,16 @@
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title">Registrační checklist</span>' +
           checklistRows +
-          '<span class="phase-note">Úpravy checklistu, e-mail, sdílení jako PDF a přesun do vyřazených budou dostupné v další fázi appky.</span>' +
+          '<span class="phase-note">Úpravy checklistu, e-mail a přesun do vyřazených budou dostupné v další fázi appky.</span>' +
         '</div>' +
       '</div>';
   }
 
   function render() {
     var main = document.getElementById('main');
-    main.innerHTML = state.view === 'detail' ? renderDetailView() : renderListView();
+    if (state.view === 'detail') { main.innerHTML = renderDetailView(); }
+    else if (state.view === 'map') { main.innerHTML = renderMapView(); }
+    else { main.innerHTML = renderListView(); }
 
     if (state.view === 'list') {
       var roky = Array.from(new Set(DATA.players.map(function(p){ return String(p.rok); }))).filter(Boolean).sort();
@@ -571,6 +775,10 @@
       document.getElementById('search').addEventListener('input', function(e) { state.q = e.target.value; render(); });
       document.getElementById('rokFilter').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
       document.getElementById('cityFilter').addEventListener('change', function(e) { state.city = e.target.value; render(); });
+    }
+    if (state.view === 'map') {
+      initMapIfNeeded();
+      plotPlayersOnMap(filteredPlayers());
     }
   }
 
