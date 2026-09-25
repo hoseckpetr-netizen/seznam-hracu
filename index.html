@@ -70,6 +70,13 @@
     .info-row a { color: var(--text); text-decoration: none; }
     .info-row a:hover { color: var(--accent); }
     .info-box > a:hover { color: var(--accent) !important; text-decoration: underline !important; }
+    .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+    .cat-editor td { padding: 6px 8px; border-bottom: 1px solid #20242a; vertical-align: middle; }
+    .cat-editor input[type="text"], .cat-editor input[type="number"] { background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; font-family: inherit; font-size: 12px; }
+    .cat-editor input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; }
+    .cat-editor a { color: var(--accent); text-decoration: none; }
+    .cat-player-list { margin-top: 6px; font-size: 12px; color: var(--muted); max-height: 160px; overflow-y: auto; }
     .checklist-wrap { display: flex; flex-direction: column; }
     .checklist-row { display: flex; align-items: center; gap: 10px; padding: 3px 2px; border-bottom: 1px solid #20242a; }
     .checklist-row:last-child { border-bottom: none; }
@@ -247,13 +254,41 @@
   // Display-only renames — the underlying category label (used for year-range matching
   // and as the value stored/filtered on) stays whatever the "Kategorie" sheet says;
   // only what's shown in the UI changes.
-  var CATEGORY_LABEL_DISPLAY = { 'Mini': 'U7', 'Minipřípravka': 'U7' };
-  function displayCategoryLabel(label) { return CATEGORY_LABEL_DISPLAY[label] || label; }
+  // Keyed by whatever text actually sits in the sheet's category-name column — currently the
+  // full descriptive names ("U19 Starší Dorost", ...). A per-row override set from the
+  // Nastavení editor (saved back to the sheet) always wins over this hardcoded fallback.
+  var CATEGORY_LABEL_DISPLAY = {
+    'Mini': 'U7', 'Minipřípravka': 'U7',
+    'U19 Starší Dorost': 'U19', 'U15 Starší žáci': 'U15', 'U13 Mladší žáci': 'U13',
+    'U12 Mladší žáci': 'U12', 'U11 A Starší přípravka': 'U11', 'U11 B Starší přípravka': 'U10',
+    'U9 Mladší přípravka': 'U9'
+  };
+  function displayCategoryLabel(label) {
+    if (DATA && DATA.categoryRules) {
+      var rule = DATA.categoryRules.find(function(r) { return r.label === label; });
+      if (rule && rule.display) return rule.display;
+    }
+    return CATEGORY_LABEL_DISPLAY[label] || label;
+  }
+  var CATEGORY_COLOR_OVERRIDES_KEY = 'fks_category_color_overrides_v1';
+  function loadCategoryColorOverrides_() {
+    try { return JSON.parse(localStorage.getItem(CATEGORY_COLOR_OVERRIDES_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveCategoryColorOverrides_(map) {
+    try { localStorage.setItem(CATEGORY_COLOR_OVERRIDES_KEY, JSON.stringify(map)); } catch (e) {}
+  }
   var CHECKLIST_KEYS = ['REG KIS','KONTAKTY','EMAIL','WHATSAPP','KIS SOUP','CASH KIS','REG FAČR','CASH FAČR','ČL KLUBU','HR KLUBU','FOTO PC','FOTO FAČR','SOUHL KIS','PL. JARO'];
+  // Approximates the color-coding from Petr's own "Kategorie" sheet tab. Any of these can
+  // be overridden per-category from the Nastavení editor, which then persists to the sheet.
   var CATEGORY_COLORS = {
-    'Muži': '#94A3B8', 'U19': '#FB7185', 'U17': '#FB923C', 'U15': '#A78BFA',
-    'U13': '#F472B6', 'U12': '#F97316', 'U11': '#FBBF24', 'U10': '#4ADE80',
-    'U9': '#34D399', 'U7': '#38BDF8', 'Mini': '#38BDF8', 'Minipřípravka': '#38BDF8'
+    'Muži': '#7DD3FC', 'U17': '#FB923C', 'U7': '#F5CBA7', 'Mini': '#F5CBA7',
+    'Minipřípravka': '#F5CBA7',
+    'U19 Starší Dorost': '#FB7185', 'U15 Starší žáci': '#A78BFA', 'U13 Mladší žáci': '#F472B6',
+    'U12 Mladší žáci': '#F97316', 'U11 A Starší přípravka': '#EF4444', 'U11 B Starší přípravka': '#60A5FA',
+    'U9 Mladší přípravka': '#F5CBA7',
+    // Kept for anything still keyed by the older short codes.
+    'U19': '#FB7185', 'U15': '#A78BFA', 'U13': '#F472B6', 'U12': '#F97316',
+    'U11': '#EF4444', 'U10': '#60A5FA', 'U9': '#F5CBA7'
   };
   var CHECKLIST_LABELS = {
     'REG KIS': 'Registrace KIS', 'KONTAKTY': 'Kontakty', 'EMAIL': 'E-mail', 'WHATSAPP': 'WhatsApp',
@@ -263,7 +298,9 @@
   };
 
   var DATA = null;
-  var state = { category: 'Vše', rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {} };
+  // categories: [] means "Vše" (no filter); otherwise a player must be in one of the listed
+  // categories (an OR filter — e.g. ['U11','U12'] shows both groups at once).
+  var state = { categories: [], rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {} };
   var tokenClient = null;
   var accessToken = null;
   var mapInstance = null, markersLayer = [], geocodeCache = {}, mapLoadToken = 0;
@@ -828,19 +865,41 @@
     return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
   }
 
+  // Columns read (all relative to the detected "od" column): od, do, kód (label), and two
+  // columns the app itself owns and writes — barva (hex color) and "zobrazit jako" (display
+  // override, e.g. so Minipřípravka can show as U7). Older sheets without those last two
+  // columns just get computed defaults (colorForLabel_ / CATEGORY_LABEL_DISPLAY) until saved
+  // once from the app's Nastavení screen, which then fills them in going forward.
   function parseCategoryRules_(values) {
-    if (!values || !values.length) return [];
-    var bestCol = -1, bestYear = -1;
-    var headerRow = values[0] || [];
-    headerRow.forEach(function (v, i) {
-      var m = /^(\d{4})-(\d{4})$/.exec((v || '').toString().trim());
-      if (m) {
-        var y = parseInt(m[1], 10);
-        if (y > bestYear) { bestYear = y; bestCol = i; }
+    if (!values || !values.length) return { rules: [], catCol: -1 };
+    // Find the real "od"/"kód" block by its own sub-header row ("...od", "...do", "Kategorie"),
+    // not by which "YYYY-YYYY" season header has the highest year. The sheet can (and does)
+    // have more than one such season block at once — e.g. a "Nově" planning block added for
+    // next season sits further right with a *higher* year but isn't filled in yet — and
+    // picking the wrong one used to silently produce zero usable rules (every player then
+    // fell back to their own raw, sometimes stale, "Kategorie" cell instead of being matched
+    // by birth year, which is how the wrong players ended up in the wrong category).
+    var bestCol = -1;
+    var subHeaderRow = values[1] || [];
+    for (var i = 0; i < subHeaderRow.length; i++) {
+      var cell = (subHeaderRow[i] || '').toString().trim().toLowerCase();
+      if (cell === 'kategorie' && i >= 2) { bestCol = i - 2; break; }
+    }
+    // Fallback for an older/differently-labeled sheet: the first "YYYY-YYYY" season header.
+    if (bestCol === -1) {
+      var headerRow = values[0] || [];
+      for (var j = 0; j < headerRow.length; j++) {
+        if (/^(\d{4})-(\d{4})$/.test((headerRow[j] || '').toString().trim())) { bestCol = j; break; }
       }
-    });
-    if (bestCol === -1) return [];
+    }
+    if (bestCol === -1) return { rules: [], catCol: -1 };
 
+    // Color and "zobrazit jako" overrides are deliberately NOT read from extra columns next
+    // to od/do/label: this sheet already uses the columns just past the label for a second,
+    // still being filled in, "Nově" (next season) block — writing app-owned columns there
+    // would silently overwrite Petr's own in-progress data. Those overrides are kept in this
+    // browser's localStorage instead (see loadCategoryColorOverrides_) until there's a
+    // reliable free spot (e.g. Petr adds a dedicated column, or the app gets its own tab).
     var rules = [];
     for (var r = 2; r < values.length; r++) {
       var od = values[r][bestCol];
@@ -849,19 +908,28 @@
       if (!label) continue;
       rules.push({
         id: 'kat' + r,
+        sheetRow: r + 1, // values[] is 0-indexed; sheet rows are 1-indexed
         label: label,
         from: Number(od) || null,
         to: Number(doo) || null
       });
     }
-    return rules;
+    return { rules: rules, catCol: bestCol };
   }
 
+  // Always returns a #rrggbb hex string (never hsl(...)) so it can be used directly as an
+  // <input type="color"> value in the Nastavení category editor.
   function colorForLabel_(label) {
     if (CATEGORY_COLORS[label]) return CATEGORY_COLORS[label];
     var hash = 0;
     for (var i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) % 360;
-    return 'hsl(' + hash + ', 65%, 60%)';
+    return hslToHex_(hash, 65, 60);
+  }
+  function hslToHex_(h, s, l) {
+    s /= 100; l /= 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    var rgb = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return '#' + rgb.map(function(v) { return Math.round((v + m) * 255).toString(16).padStart(2, '0'); }).join('');
   }
 
   function matchCategoryRule_(rok, rules) {
@@ -915,15 +983,49 @@
 
           var parsed = parseRoster_(seznamValues, 'Seznam');
           var players = parsed.players;
-          var rules = parseCategoryRules_(kategorieValues);
-          var rulesWithColor = rules.map(function (r) {
-            return { id: r.id, label: r.label, from: r.from, to: r.to, color: colorForLabel_(r.label) };
+          var catParsed = parseCategoryRules_(kategorieValues);
+          var catOverrides = loadCategoryColorOverrides_();
+          var rulesWithColor = catParsed.rules.map(function (r) {
+            var ov = catOverrides[r.label];
+            return {
+              id: r.id, sheetRow: r.sheetRow, label: r.label, from: r.from, to: r.to,
+              color: (ov && ov.color) || colorForLabel_(r.label),
+              display: (ov && ov.display) || CATEGORY_LABEL_DISPLAY[r.label] || r.label,
+              sheetBacked: true
+            };
           });
 
           players.forEach(function (p) {
             var rule = matchCategoryRule_(p.rok, rulesWithColor);
+            if (!rule) rule = rulesWithColor.find(function(r) { return r.label === (p.kategorie || '').toString().trim(); }) || null;
             p.categoryGroup = rule ? rule.label : (p.kategorie || 'Nezařazeno');
             p.categoryColor = rule ? rule.color : colorForLabel_(p.kategorie || 'Nezařazeno');
+          });
+
+          // Auto-discover any category a player actually has (from the sheet's own
+          // "Kategorie" column, e.g. "Muži") that isn't a year-range rule above — so it
+          // still shows up as a filter chip and in Nastavení, even before it's been given
+          // a proper row in the Kategorie sheet tab. Its color can still be customized and
+          // saved (see saveCategoryOverrides), just stored per-browser until it gets a row.
+          var knownLabels = {};
+          rulesWithColor.forEach(function(r) { knownLabels[r.label] = true; });
+          var orphanLabels = [];
+          players.forEach(function(p) {
+            if (!knownLabels[p.categoryGroup] && p.categoryGroup !== 'Nezařazeno' && orphanLabels.indexOf(p.categoryGroup) === -1) {
+              orphanLabels.push(p.categoryGroup);
+            }
+          });
+          orphanLabels.forEach(function(label) {
+            var ov = catOverrides[label];
+            var color = (ov && ov.color) || colorForLabel_(label);
+            var display = (ov && ov.display) || CATEGORY_LABEL_DISPLAY[label] || label;
+            rulesWithColor.push({ id: 'orphan_' + label, sheetRow: null, label: label, from: null, to: null, color: color, display: display, sheetBacked: false });
+          });
+          // Re-apply colors now that orphan rules (and their possible per-browser color
+          // overrides) exist, so a player in an orphan group gets the customized color too.
+          players.forEach(function(p) {
+            var match = rulesWithColor.find(function(r){ return r.label === p.categoryGroup; });
+            if (match) p.categoryColor = match.color;
           });
 
           var cities = {};
@@ -945,6 +1047,7 @@
             players: players,
             vyrazeni: vyrazeni,
             categoryRules: rulesWithColor,
+            categoryCol: catParsed.catCol,
             cities: Object.keys(cities).sort(),
             season: 'Seznam hráčů 26/27',
             role: role,
@@ -983,7 +1086,7 @@
 
   function filteredPlayers() {
     return DATA.players.filter(function(p) {
-      if (state.category !== 'Vše' && p.categoryGroup !== state.category) return false;
+      if (state.categories.length && state.categories.indexOf(p.categoryGroup) === -1) return false;
       if (state.rok !== 'Vše' && String(p.rok) !== state.rok) return false;
       if (state.city !== 'Vše' && p.mesto !== state.city) return false;
       if (state.q && p.jmenoCele.toLowerCase().indexOf(state.q.toLowerCase()) === -1) return false;
@@ -1093,7 +1196,7 @@
   function sharePlayersPDF() {
     var players = selectedPlayers();
     if (!players.length) return;
-    var title = state.category !== 'Vše' ? ('Soupiska: ' + state.category) : 'Soupiska hráčů';
+    var title = state.categories.length ? ('Soupiska: ' + state.categories.map(displayCategoryLabel).join(', ')) : 'Soupiska hráčů';
     var rows = players.map(function(p, i) {
       return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.jmenoCele) + '</td><td>' + esc(p.categoryGroup) + '</td><td>' + esc(p.rok) + '</td><td>' + esc(p.datumNarozeni) + '</td><td>' + esc(p.mesto) + '</td></tr>';
     }).join('');
@@ -1414,7 +1517,7 @@
   }
   function renderMapView() {
     return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám mapu…</div></div>' +
-      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.category === 'Vše' ? 'všechny kategorie' : state.category) + '). Polohy jsou přibližné odhady podle adresy, zdroj: Google Maps.</div>' +
+      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.categories.length ? state.categories.map(displayCategoryLabel).join(', ') : 'všechny kategorie') + '). Polohy jsou přibližné odhady podle adresy, zdroj: Google Maps.</div>' +
       '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
   }
 
@@ -1427,13 +1530,163 @@
     return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
   }
 
+  // ---------- Category editor (Nastavení) ----------
+  // Players grouped by categoryGroup — used both for the "Hráčů" count/expandable list in
+  // the editor (this is the direct way to see, and catch, a player sitting in the wrong
+  // category) and by the save function.
+  function categoryPlayerGroups_() {
+    var byGroup = {};
+    (DATA.players || []).forEach(function(p) {
+      (byGroup[p.categoryGroup] = byGroup[p.categoryGroup] || []).push(p);
+    });
+    return byGroup;
+  }
+  function renderCategoryOverlapWarning_() {
+    var rules = (DATA.categoryRules || []).filter(function(r) { return r.from != null && r.to != null; });
+    var overlaps = [];
+    for (var i = 0; i < rules.length; i++) {
+      for (var j = i + 1; j < rules.length; j++) {
+        var a = rules[i], b = rules[j];
+        if (a.from <= b.to && b.from <= a.to) overlaps.push(a.label + ' × ' + b.label + ' (' + a.from + '–' + a.to + ' / ' + b.from + '–' + b.to + ')');
+      }
+    }
+    if (!overlaps.length) return '';
+    return '<div style="background:#3a1f1f;border:1px solid #7a3b3b;color:#ffb4b4;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px;">' +
+      '⚠ Překrývající se ročníky (u přiřazení hráče vyhrává první shoda podle pořadí v listu): ' + esc(overlaps.join('; ')) + '</div>';
+  }
+  function renderCategoryEditorRows_() {
+    var groups = categoryPlayerGroups_();
+    return (DATA.categoryRules || []).map(function(r) {
+      var players = groups[r.label] || [];
+      var od = r.from != null ? r.from : '';
+      var doo = r.to != null ? r.to : '';
+      var yearInputs = r.sheetBacked ?
+        ('<td><input type="number" class="cat-in" data-field="from" style="width:60px;" value="' + od + '"></td>' +
+         '<td><input type="number" class="cat-in" data-field="to" style="width:60px;" value="' + doo + '"></td>') :
+        ('<td colspan="2" style="color:var(--muted);font-size:11px;">– (bez řádku v listu)</td>');
+      var playerList = players.length ?
+        ('<div class="cat-player-list" style="display:none;">' + players.map(function(p) {
+          return '<div>' + esc(p.jmenoCele) + ' <span style="color:var(--muted);">(' + esc(p.rok || '?') + ')</span></div>';
+        }).join('') + '</div>') : '';
+      return '<tr data-rule-id="' + esc(r.id) + '" data-sheet-row="' + (r.sheetRow || '') + '" data-label="' + esc(r.label) + '" data-sheet-backed="' + (r.sheetBacked ? '1' : '0') + '">' +
+        '<td><input type="color" class="cat-in" data-field="color" value="' + esc(r.color) + '"></td>' +
+        '<td>' + esc(r.label) + '</td>' +
+        '<td><input type="text" class="cat-in" data-field="display" placeholder="' + esc(r.label) + '" value="' + (r.display !== r.label ? esc(r.display) : '') + '" style="width:80px;"></td>' +
+        yearInputs +
+        '<td><a href="javascript:void(0)" onclick="toggleCategoryPlayerList(this, \'' + esc(r.id) + '\')">' + players.length + '</a>' + playerList + '</td>' +
+        '<td>' + (r.sheetBacked ? '<input type="checkbox" class="cat-in" data-field="delete">' : '') + '</td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="7" class="loading">Žádné kategorie nenalezeny.</td></tr>';
+  }
+  function toggleCategoryPlayerList(link, id) {
+    var row = link.closest('tr');
+    var listEl = row.querySelector('.cat-player-list');
+    if (!listEl) return;
+    listEl.style.display = listEl.style.display === 'none' ? 'block' : 'none';
+  }
+  function renderCategoryAddRow_() {
+    return '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">' +
+      '<span style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">Přidat kategorii</span>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+        '<input type="text" id="catAddCode" placeholder="Kód (např. U8)" style="width:100px;">' +
+        '<input type="text" id="catAddDisplay" placeholder="Zobrazit jako (nepovinné)" style="width:140px;">' +
+        '<input type="number" id="catAddFrom" placeholder="Od" style="width:70px;">' +
+        '<input type="number" id="catAddTo" placeholder="Do" style="width:70px;">' +
+        '<input type="color" id="catAddColor" value="#38BDF8">' +
+        '<button class="icon-btn toolbar-btn" onclick="addCategoryRow()">Přidat</button>' +
+      '</div>' +
+      '<div id="catAddStatus" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>' +
+    '</div>';
+  }
+  var pendingNewCategories = [];
+  function addCategoryRow() {
+    var code = document.getElementById('catAddCode').value.trim();
+    if (!code) { document.getElementById('catAddStatus').textContent = 'Zadejte kód kategorie.'; return; }
+    pendingNewCategories.push({
+      label: code,
+      display: document.getElementById('catAddDisplay').value.trim() || null,
+      from: document.getElementById('catAddFrom').value ? Number(document.getElementById('catAddFrom').value) : null,
+      to: document.getElementById('catAddTo').value ? Number(document.getElementById('catAddTo').value) : null,
+      color: document.getElementById('catAddColor').value
+    });
+    document.getElementById('catAddStatus').textContent = 'Přidáno k uložení: ' + code + ' (klikněte na "Uložit změny kategorií").';
+    document.getElementById('catAddCode').value = '';
+    document.getElementById('catAddDisplay').value = '';
+    document.getElementById('catAddFrom').value = '';
+    document.getElementById('catAddTo').value = '';
+  }
+  function saveCategoryRules() {
+    if (!DATA || DATA.role !== 'admin') return;
+    var statusEl = document.getElementById('catSaveStatus');
+    if (statusEl) statusEl.textContent = 'Ukládám…';
+    var catCol = DATA.categoryCol;
+    if (catCol == null || catCol < 0) {
+      if (statusEl) statusEl.textContent = 'Sloupce kategorií v listu "Kategorie" nebyly nalezeny.';
+      return;
+    }
+    // Only od/do (and, for a brand-new category, the label itself) are ever written back to
+    // the "Kategorie" sheet — the columns right after the label are already in use for
+    // Petr's own in-progress "Nově" (next season) block, so color and "zobrazit jako" are
+    // never written there; they're kept in this browser's localStorage for every category,
+    // sheet-backed or not (see loadCategoryColorOverrides_ / saveCategoryColorOverrides_).
+    var writes = [];
+    var localOverrides = loadCategoryColorOverrides_();
+    var maxSheetRow = 2; // header rows are 1–2; data starts at row 3
+    document.querySelectorAll('#main tr[data-rule-id]').forEach(function(row) {
+      var sheetRow = Number(row.getAttribute('data-sheet-row'));
+      var label = row.getAttribute('data-label');
+      var sheetBacked = row.getAttribute('data-sheet-backed') === '1';
+      var color = row.querySelector('[data-field="color"]').value;
+      var display = row.querySelector('[data-field="display"]').value.trim();
+      localOverrides[label] = { color: color, display: display || null };
+      if (!sheetBacked) return;
+      if (sheetRow > maxSheetRow) maxSheetRow = sheetRow;
+      var del = row.querySelector('[data-field="delete"]').checked;
+      if (del) {
+        writes.push({ range: 'Kategorie!' + colIndexToLetter(catCol + 2) + sheetRow, values: [['']] });
+        delete localOverrides[label];
+        return;
+      }
+      var fromEl = row.querySelector('[data-field="from"]'), toEl = row.querySelector('[data-field="to"]');
+      var from = fromEl ? fromEl.value : '';
+      var to = toEl ? toEl.value : '';
+      writes.push({ range: 'Kategorie!' + colIndexToLetter(catCol) + sheetRow + ':' + colIndexToLetter(catCol + 1) + sheetRow,
+        values: [[from, to]] });
+    });
+    pendingNewCategories.forEach(function(nc) {
+      maxSheetRow++;
+      localOverrides[nc.label] = { color: nc.color, display: nc.display || null };
+      writes.push({ range: 'Kategorie!' + colIndexToLetter(catCol) + maxSheetRow + ':' + colIndexToLetter(catCol + 2) + maxSheetRow,
+        values: [[nc.from != null ? nc.from : '', nc.to != null ? nc.to : '', nc.label]] });
+    });
+    saveCategoryColorOverrides_(localOverrides);
+    if (!writes.length) {
+      if (statusEl) statusEl.textContent = 'Uloženo (jen barvy kategorií bez řádku v listu).';
+      pendingNewCategories = [];
+      loadData();
+      return;
+    }
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: writes })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      pendingNewCategories = [];
+      if (statusEl) statusEl.textContent = 'Uloženo.';
+      loadData();
+    }).catch(function(err) {
+      if (statusEl) statusEl.textContent = 'Uložení selhalo: ' + err.message;
+    });
+  }
+
   function renderSettingsView() {
     if (!DATA || DATA.role !== 'admin') {
       return '<div class="header"><h1>Nastavení</h1></div><div class="loading">Nastavení jsou dostupná pouze pro správce účtu.</div>';
     }
-    var catRows = (DATA.categoryRules || []).map(function(r) {
-      return '<div class="info-row"><span>' + esc(displayCategoryLabel(r.label)) + '</span><span>' + (r.from != null ? r.from : '–') + ' – ' + (r.to != null ? r.to : '–') + '</span></div>';
-    }).join('') || '<div class="loading">Žádné kategorie nenalezeny.</div>';
+    var catRows = renderCategoryEditorRows_();
 
     var checklistRows = CHECKLIST_KEYS.map(function(key) {
       return '<div class="info-row"><span>' + esc(CHECKLIST_LABELS[key] || key) + '</span><span style="color:var(--muted);font-size:11px;">' + esc(key) + '</span></div>';
@@ -1441,10 +1694,19 @@
 
     return '<div class="header"><h1>Nastavení</h1></div>' +
       '<div class="detail-grid">' +
-        '<div class="info-box">' +
-          '<span class="box-title">Kategorie (ročníky)</span>' +
-          catRows +
-          '<span class="phase-note">Úprava kategorií/ročníků přímo v appce bude v další verzi — zatím se upravují na listu "Kategorie" v tabulce.</span>' +
+        '<div class="info-box" style="min-width:100%;">' +
+          '<span class="box-title">Kategorie</span>' +
+          renderCategoryOverlapWarning_() +
+          '<table class="cat-editor"><thead><tr>' +
+            '<th></th><th>Kód</th><th>Zobrazit jako</th><th>Ročník od</th><th>Ročník do</th><th>Hráčů</th><th>Smazat</th>' +
+          '</tr></thead><tbody>' + catRows + '</tbody></table>' +
+          '<div id="catPlayerLists"></div>' +
+          renderCategoryAddRow_() +
+          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;">' +
+            '<button class="icon-btn toolbar-btn" onclick="saveCategoryRules()">Uložit změny kategorií</button>' +
+            '<span id="catSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+          '</div>' +
+          '<span class="phase-note">Ročník od/do se ukládá do listu "Kategorie" v tabulce (viditelné i pro ostatní). Barva a "zobrazit jako" se zatím ukládají jen v tomto prohlížeči — list "Kategorie" má vedle sloupce s kategorií ještě nedokončený sloupec pro příští sezónu, který nechci přepisovat. Kategorie bez vlastního řádku (např. "Muži") se sem doplňují automaticky podle toho, co mají hráči vyplněné.</span>' +
         '</div>' +
         '<div class="info-box">' +
           '<span class="box-title">Položky checklistu</span>' +
@@ -1788,16 +2050,24 @@
   }
 
   function renderCatList() {
-    var html = '<div class="cat-item' + (state.category === 'Vše' ? ' active' : '') + '" data-cat="Vše"><span class="dot" style="background:#5a6169"></span>Vše</div>';
+    // "Vše" is active exactly when nothing else is selected; every other chip can be
+    // toggled on/off independently, so several categories (e.g. U11 + U12) can show at once.
+    var html = '<div class="cat-item' + (state.categories.length === 0 ? ' active' : '') + '" data-cat="Vše"><span class="dot" style="background:#5a6169"></span>Vše</div>';
     html += DATA.categoryRules.map(function (r) {
-      return '<div class="cat-item' + (state.category === r.label ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
+      return '<div class="cat-item' + (state.categories.indexOf(r.label) !== -1 ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
         '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
     var el = document.getElementById('catList');
     el.innerHTML = html;
     Array.prototype.forEach.call(el.children, function(child) {
       child.addEventListener('click', function() {
-        state.category = child.getAttribute('data-cat');
+        var cat = child.getAttribute('data-cat');
+        if (cat === 'Vše') {
+          state.categories = [];
+        } else {
+          var i = state.categories.indexOf(cat);
+          if (i === -1) state.categories.push(cat); else state.categories.splice(i, 1);
+        }
         // Stay on the map if the map is already open (so picking a category re-filters
         // the markers in place); only detail view kicks back to the list.
         if (state.view === 'detail') state.view = 'list';
