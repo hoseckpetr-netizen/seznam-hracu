@@ -402,14 +402,51 @@
   }
 
   // ---------- Player photos (Google Drive "Fotky hráčů" folder) ----------
-  var photoIndex = null;
+  // Photos are imported ON DEMAND (one player at a time, when the "FOTO PC" checklist
+  // item is checked — see toggleChecklistItem) rather than bulk-loaded for all players on
+  // every load: that used to be slow, and it hotlinked Drive's thumbnailLink, which only
+  // reliably loads for a signed-in Drive session and silently fails for anyone else. Instead,
+  // the actual image bytes are fetched once (Authorization header, so it works for any
+  // account with read access, not just whoever last had a Drive tab open), shrunk down and
+  // stored as a compressed data URL in this browser's localStorage — so once imported, a
+  // player's photo shows instantly, offline, in this browser, with no repeat Drive calls.
+  var photoIndex = null;       // name -> {id, name}, built lazily on first import
+  var photoIndexPromise = null;
+  var PHOTO_CACHE_KEY = 'fks_photo_cache_v1';
   function normalizePhotoKey(s) {
     return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
   }
-  function loadPlayerPhotos() {
+  function loadPhotoCache() {
+    try { return JSON.parse(localStorage.getItem(PHOTO_CACHE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function savePhotoCache(cache) {
+    try {
+      localStorage.setItem(PHOTO_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {
+      // Quota exceeded (photos add up) — drop the oldest half of the cache and retry once
+      // rather than losing the newest import.
+      try {
+        var keys = Object.keys(cache);
+        keys.slice(0, Math.floor(keys.length / 2)).forEach(function(k) { delete cache[k]; });
+        localStorage.setItem(PHOTO_CACHE_KEY, JSON.stringify(cache));
+      } catch (e2) {}
+    }
+  }
+  // Patches in whatever photos this browser has already imported before — cheap (no
+  // network), called right after loadData() so previously-imported photos show immediately.
+  function applyCachedPhotosToRoster() {
+    if (!DATA || !DATA.players) return;
+    var cache = loadPhotoCache();
+    DATA.players.forEach(function(p) {
+      var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
+      if (cache[key]) p.photoDataUrl = cache[key];
+    });
+  }
+  function ensurePhotoIndex() {
+    if (photoIndexPromise) return photoIndexPromise;
     var base = 'https://www.googleapis.com/drive/v3/files?q=' +
       encodeURIComponent("'" + PHOTOS_FOLDER_ID + "' in parents and trashed = false") +
-      '&fields=' + encodeURIComponent('nextPageToken,files(id,name,thumbnailLink)') + '&pageSize=1000';
+      '&fields=' + encodeURIComponent('nextPageToken,files(id,name)') + '&pageSize=1000';
     function fetchPage(pageToken, acc) {
       var url = base + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
       return fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } })
@@ -420,34 +457,59 @@
           return acc;
         });
     }
-    return fetchPage(null, []).then(function(files) {
+    photoIndexPromise = fetchPage(null, []).then(function(files) {
       var idx = {};
-      files.forEach(function(f) {
-        var nameNoExt = f.name.replace(/\.[^.]+$/, '');
-        idx[normalizePhotoKey(nameNoExt)] = f;
-      });
+      files.forEach(function(f) { idx[normalizePhotoKey(f.name.replace(/\.[^.]+$/, ''))] = f; });
       photoIndex = idx;
-      if (DATA && DATA.players) {
-        var matched = 0;
-        DATA.players.forEach(function(p) {
-          var f = idx[normalizePhotoKey(p.prijmeni + ' ' + p.jmeno)];
-          if (f) { p.photoId = f.id; p.photoThumb = f.thumbnailLink; matched++; }
-        });
-        render(); // patch photos into whatever view is currently showing
-        if (matched === 0) pushNotification('Ve složce Fotky hráčů se nenašla žádná fotka odpovídající jménu hráče.', 'warn');
-      }
-    }).catch(function() {
-      // Photos are a nice-to-have enhancement — never let a Drive hiccup break the roster view.
-      pushNotification('Fotky hráčů se nepodařilo načíst z Disku (zkontrolujte sdílení složky).', 'error');
+      return idx;
+    }).catch(function(err) {
+      photoIndexPromise = null; // allow a retry on the next import attempt
+      throw err;
+    });
+    return photoIndexPromise;
+  }
+  // Shrinks+compresses a fetched photo before it goes into localStorage — a full-size phone
+  // photo would blow the quota after a handful of players.
+  function blobToResizedDataUrl(blob, maxDim, quality) {
+    return createImageBitmap(blob).then(function(bitmap) {
+      var scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+      var w = Math.max(1, Math.round(bitmap.width * scale));
+      var h = Math.max(1, Math.round(bitmap.height * scale));
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      return canvas.toDataURL('image/jpeg', quality);
     });
   }
-  function photoUrl(p, size) {
-    if (!p || !p.photoThumb) return null;
-    return /=s\d+$/.test(p.photoThumb) ? p.photoThumb.replace(/=s\d+$/, '=s' + size) : p.photoThumb;
+  // Finds this player's photo by name in the "Fotky hráčů" Drive folder, downloads it,
+  // and caches it. Triggered from toggleChecklistItem when "FOTO PC" is checked on.
+  function importPlayerPhoto(p, silent) {
+    var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
+    var cache = loadPhotoCache();
+    if (cache[key]) { p.photoDataUrl = cache[key]; render(); return Promise.resolve(); }
+    return ensurePhotoIndex().then(function(idx) {
+      var f = idx[key];
+      if (!f) {
+        if (!silent) pushNotification('Fotka pro ' + p.jmenoCele + ' nenalezena ve složce "Fotky hráčů" (hledáno jako "' + p.prijmeni + ' ' + p.jmeno + '").', 'warn');
+        return;
+      }
+      return fetch('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media', { headers: { 'Authorization': 'Bearer ' + accessToken } })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+        .then(function(blob) { return blobToResizedDataUrl(blob, 300, 0.75); })
+        .then(function(dataUrl) {
+          cache[key] = dataUrl;
+          savePhotoCache(cache);
+          p.photoDataUrl = dataUrl;
+          if (!silent) pushNotification('Fotka hráče ' + p.jmenoCele + ' byla naimportována.', 'info');
+          render();
+        });
+    }).catch(function(err) {
+      if (!silent) pushNotification('Import fotky hráče ' + p.jmenoCele + ' selhal: ' + err.message, 'error');
+    });
   }
   function avatarInnerHtml(p, size) {
-    if (p.photoThumb) {
-      return '<img src="' + esc(photoUrl(p, size)) + '" alt="" onerror="this.outerHTML=\'' + jsStr(esc(initials(p.jmenoCele))) + '\';">';
+    if (p.photoDataUrl) {
+      return '<img src="' + p.photoDataUrl + '" alt="" onerror="this.outerHTML=\'' + jsStr(esc(initials(p.jmenoCele))) + '\';">';
     }
     return esc(initials(p.jmenoCele));
   }
@@ -777,9 +839,9 @@
 
           document.getElementById('season').textContent = DATA.season;
           document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()">Odhlásit</button>';
+          applyCachedPhotosToRoster();
           renderCatList();
           render();
-          loadPlayerPhotos();
         });
     }).catch(function(err) {
       clearTimeout(slowTimer);
@@ -818,6 +880,12 @@
     state.view = 'detail';
     state.selectedRow = sheetRow;
     render();
+    // If this player already has "FOTO PC" checked (photo was imported by someone else,
+    // in another browser) but this browser hasn't cached it yet, fetch it now — this is
+    // what lets a viewer-only account (e.g. Radek) see photos too, as long as the "Fotky
+    // hráčů" Drive folder is shared with their account for read access.
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (p && p.checklist['FOTO PC'] && !p.photoDataUrl) importPlayerPhoto(p, true);
   }
 
   function backToList() {
@@ -1006,6 +1074,36 @@
       area.innerHTML = '<div class="diff-summary" style="color:var(--red);">Uložení selhalo: ' + esc(err.message) + '</div>' +
         '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
       pushNotification('Uložení změn u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+    });
+  }
+
+  // ---------- Registrační checklist — klikací zaškrtávání (admin only) ----------
+  // Clicking a checklist row toggles it and writes straight back to the matching
+  // "Seznam" sheet cell. Checking "FOTO PC" additionally triggers a one-time photo
+  // import for that player (see importPlayerPhoto above).
+  function toggleChecklistItem(sheetRow, key) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var colIdx = DATA.colIndex && DATA.colIndex.checklistCols ? DATA.colIndex.checklistCols[key] : -1;
+    if (colIdx == null || colIdx < 0) {
+      pushNotification('Sloupec pro "' + (CHECKLIST_LABELS[key] || key) + '" nebyl v tabulce nalezen.', 'error');
+      return;
+    }
+    var newVal = !p.checklist[key];
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: [{ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[newVal]] }] })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      p.checklist[key] = newVal;
+      render();
+      if (key === 'FOTO PC' && newVal === true) importPlayerPhoto(p);
+    }).catch(function(err) {
+      pushNotification('Uložení položky "' + (CHECKLIST_LABELS[key] || key) + '" u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
     });
   }
 
@@ -1363,10 +1461,12 @@
     var c = checklistCounts(p);
     var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
 
+    var isAdmin = DATA.role === 'admin';
     var checklistRows = Object.keys(p.checklist).map(function(key) {
       var on = p.checklist[key];
       var label = CHECKLIST_LABELS[key] || key;
-      return '<div class="checklist-row">' +
+      var attrs = isAdmin ? ' style="cursor:pointer;" onclick="toggleChecklistItem(' + p.sheetRow + ', \'' + jsStr(key) + '\')" title="Klikněte pro změnu"' : '';
+      return '<div class="checklist-row"' + attrs + '>' +
         '<span class="cl-label">' + esc(label) + '</span>' +
         '<span class="cl-icon ' + (on ? 'on' : 'off') + '">' + (on ? '&#10003;' : '&#10005;') + '</span>' +
       '</div>';
@@ -1374,7 +1474,6 @@
 
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
     var mapsHref = addressLine ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addressLine + ', Česká republika') : null;
-    var isAdmin = DATA.role === 'admin';
     var hasZastupce2 = !!(p.zastupce2Jmeno || p.zastupce2Telefon || p.zastupce2Email);
 
     function contactRow(label, value, isPhone) {
