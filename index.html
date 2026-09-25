@@ -2448,6 +2448,19 @@
     else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
     else { main.innerHTML = renderListView(); }
 
+    // Sdílet/Filtr/Zrušit filtr/Aktualizovat only make sense against the player list — hide
+    // them on the player detail card (and close any panel left open from the list view).
+    var sidebarToolsEl = document.querySelector('.sidebar-tools');
+    if (sidebarToolsEl) {
+      sidebarToolsEl.style.display = (state.view === 'detail') ? 'none' : 'grid';
+      if (state.view === 'detail') {
+        ['sharePanel', 'filterPanel'].forEach(function(id) {
+          var p = document.getElementById(id);
+          if (p) p.style.display = 'none';
+        });
+      }
+    }
+
     // Note: the Filtr/Sdílet dropdown panels are deliberately NOT re-rendered here on every
     // render() call — rebuilding the search <input> on each keystroke would reset its cursor
     // position/focus. They're (re)built once when opened (toggleSidebarPanel) and refreshed
