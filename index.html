@@ -1282,8 +1282,16 @@
     });
   }
 
+  // The search box lives inside the Filtr dropdown panel (built by renderFilterPanel), not as
+  // an always-present element — it used to look for a "search" id that no longer exists since
+  // the filter panel redesign, so the magnifying-glass icon silently did nothing. It now makes
+  // sure the list view + Filtr panel are open first, then focuses the box inside it.
   function focusSearch() {
-    var el = document.getElementById('search');
+    if (state.view !== 'list') { state.view = 'list'; render(); }
+    var filterBtn = document.querySelector('.sidebar-tools [onclick*="toggleSidebarPanel(\'filter\'"]');
+    var panel = document.getElementById('filterPanel');
+    if (panel && panel.style.display !== 'block' && filterBtn) toggleSidebarPanel('filter', filterBtn);
+    var el = document.getElementById('sidebarSearch');
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
   }
 
