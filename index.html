@@ -90,8 +90,19 @@
     .cat-editor td { padding: 7px 8px; border-bottom: 1px solid #20242a; vertical-align: middle; }
     .cat-editor tbody tr:hover td { background: rgba(255,255,255,0.02); }
     .cat-editor input[type="text"], .cat-editor input[type="number"] { background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; font-family: inherit; font-size: 12px; }
-    .cat-editor input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; }
     .cat-editor input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+    .color-swatch-wrap { display: inline-flex; align-items: center; }
+    .color-swatch { width: 26px; height: 26px; border-radius: 50%; border: none; padding: 0; cursor: pointer; box-shadow: 0 0 0 2px var(--card), 0 0 0 3px var(--border); transition: transform .12s ease, box-shadow .12s ease; flex-shrink: 0; }
+    .color-swatch:hover { transform: scale(1.08); box-shadow: 0 0 0 2px var(--card), 0 0 0 3px var(--accent); }
+    .color-swatch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--card), 0 0 0 3px var(--accent); }
+    .color-popover { position: fixed; z-index: 200; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.45); width: 208px; }
+    .color-popover-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 10px; }
+    .color-popover-grid button { width: 26px; height: 26px; border-radius: 50%; border: none; padding: 0; cursor: pointer; transition: transform .1s ease; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
+    .color-popover-grid button:hover { transform: scale(1.14); }
+    .color-popover-grid button.active { box-shadow: 0 0 0 2px var(--card), 0 0 0 2px var(--text), inset 0 0 0 1px rgba(255,255,255,0.12); }
+    .color-popover-hex { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .color-popover-hex .color-swatch-preview { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
+    .color-popover-hex input { flex: 1; min-width: 0; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 7px; font-family: inherit; font-size: 12px; }
     .switch { position: relative; display: inline-block; width: 34px; height: 20px; flex-shrink: 0; vertical-align: middle; }
     .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
     .switch-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background .15s ease; }
@@ -105,7 +116,7 @@
     .add-cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
     .add-cat-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
     .add-cat-grid input { width: 100%; box-sizing: border-box; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-family: inherit; font-size: 13px; }
-    .add-cat-grid input[type="color"] { padding: 2px; height: 32px; }
+    .add-cat-grid label .color-swatch-wrap { margin-top: 2px; }
     .checklist-wrap { display: flex; flex-direction: column; }
     .checklist-row { display: flex; align-items: center; gap: 10px; padding: 3px 2px; border-bottom: 1px solid #20242a; }
     .checklist-row:last-child { border-bottom: none; }
@@ -1707,6 +1718,93 @@
     return '<div style="background:#3a1f1f;border:1px solid #7a3b3b;color:#ffb4b4;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px;">' +
       '⚠ Překrývající se ročníky (u přiřazení hráče vyhrává první shoda podle pořadí v listu): ' + esc(overlaps.join('; ')) + '</div>';
   }
+  // Custom color picker: replaces the native <input type="color"> OS dialog with a small
+  // rounded swatch button that opens a popover of curated preset colors plus a hex field.
+  // A hidden text input still carries the actual value under data-field="color" (or a given
+  // id), so existing read sites (saveCategoryRules, addCategoryRow) keep working unchanged.
+  var COLOR_PRESETS_ = ['#F87171','#FB923C','#FBBF24','#FACC15','#A3E635','#4ADE80',
+    '#34D399','#2DD4BF','#22D3EE','#38BDF8','#60A5FA','#818CF8',
+    '#A78BFA','#C084FC','#E879F9','#F472B6','#FB7185','#94A3B8'];
+  function colorSwatchHtml_(value, hiddenAttrsStr) {
+    var v = value || '#38BDF8';
+    return '<span class="color-swatch-wrap">' +
+      '<button type="button" class="color-swatch" style="background:' + esc(v) + ';" onclick="openColorPicker(this)" aria-label="Vybrat barvu"></button>' +
+      '<input type="hidden" value="' + esc(v) + '" ' + hiddenAttrsStr + '>' +
+    '</span>';
+  }
+  var activeColorBtn_ = null;
+  function closeColorPicker_() {
+    var pop = document.getElementById('colorPopover');
+    if (pop) pop.remove();
+    activeColorBtn_ = null;
+    document.removeEventListener('mousedown', colorPickerOutsideHandler_, true);
+    document.removeEventListener('keydown', colorPickerEscHandler_, true);
+  }
+  function colorPickerOutsideHandler_(e) {
+    var pop = document.getElementById('colorPopover');
+    if (pop && !pop.contains(e.target) && e.target.getAttribute('data-swatch-open') !== '1') closeColorPicker_();
+  }
+  function colorPickerEscHandler_(e) {
+    if (e.key === 'Escape') closeColorPicker_();
+  }
+  function openColorPicker(btn) {
+    if (activeColorBtn_ === btn) { closeColorPicker_(); return; }
+    closeColorPicker_();
+    activeColorBtn_ = btn;
+    var hidden = btn.nextElementSibling;
+    var current = hidden.value || '#38BDF8';
+    var rect = btn.getBoundingClientRect();
+    var pop = document.createElement('div');
+    pop.id = 'colorPopover';
+    pop.className = 'color-popover';
+    var left = rect.left;
+    if (left + 208 > window.innerWidth - 8) left = window.innerWidth - 216;
+    if (left < 8) left = 8;
+    var top = rect.bottom + 8;
+    if (top + 140 > window.innerHeight - 8) top = rect.top - 148;
+    pop.style.top = top + 'px';
+    pop.style.left = left + 'px';
+    pop.innerHTML =
+      '<div class="color-popover-grid">' +
+        COLOR_PRESETS_.map(function(c) {
+          return '<button type="button" style="background:' + c + ';" class="' + (c.toLowerCase() === current.toLowerCase() ? 'active' : '') + '" data-swatch-open="1" onclick="pickColor_(this, \'' + c + '\')"></button>';
+        }).join('') +
+      '</div>' +
+      '<div class="color-popover-hex">' +
+        '<span class="color-swatch-preview" id="colorPopoverPreview" data-swatch-open="1" style="background:' + esc(current) + ';"></span>' +
+        '<input type="text" id="colorPopoverHex" data-swatch-open="1" value="' + esc(current) + '" maxlength="7" placeholder="#38BDF8">' +
+      '</div>';
+    document.body.appendChild(pop);
+    document.getElementById('colorPopoverHex').addEventListener('input', function() {
+      var v = this.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        document.getElementById('colorPopoverPreview').style.background = v;
+        applyColorChoice_(v);
+      }
+    });
+    setTimeout(function() {
+      document.addEventListener('mousedown', colorPickerOutsideHandler_, true);
+      document.addEventListener('keydown', colorPickerEscHandler_, true);
+    }, 0);
+  }
+  function pickColor_(swatchBtn, color) {
+    applyColorChoice_(color);
+    var hexInput = document.getElementById('colorPopoverHex');
+    if (hexInput) hexInput.value = color;
+    var preview = document.getElementById('colorPopoverPreview');
+    if (preview) preview.style.background = color;
+    var pop = document.getElementById('colorPopover');
+    if (pop) Array.prototype.forEach.call(pop.querySelectorAll('.color-popover-grid button'), function(b) { b.classList.remove('active'); });
+    swatchBtn.classList.add('active');
+  }
+  function applyColorChoice_(color) {
+    if (!activeColorBtn_) return;
+    activeColorBtn_.style.background = color;
+    var hidden = activeColorBtn_.nextElementSibling;
+    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(hidden, color);
+    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   function renderCategoryEditorRows_() {
     var groups = categoryPlayerGroups_();
     return (DATA.categoryRules || []).map(function(r) {
@@ -1722,7 +1820,7 @@
           return '<div>' + esc(p.jmenoCele) + ' <span style="color:var(--muted);">(' + esc(p.rok || '?') + ')</span></div>';
         }).join('') + '</div>') : '';
       return '<tr data-rule-id="' + esc(r.id) + '" data-sheet-row="' + (r.sheetRow || '') + '" data-label="' + esc(r.label) + '" data-sheet-backed="' + (r.sheetBacked ? '1' : '0') + '">' +
-        '<td><input type="color" class="cat-in" data-field="color" value="' + esc(r.color) + '"></td>' +
+        '<td>' + colorSwatchHtml_(r.color, 'class="cat-in" data-field="color"') + '</td>' +
         '<td>' + esc(r.label) + '</td>' +
         '<td><input type="text" class="cat-in" data-field="display" placeholder="' + esc(r.label) + '" value="' + (r.display !== r.label ? esc(r.display) : '') + '" style="width:80px;"></td>' +
         yearInputs +
@@ -1759,7 +1857,7 @@
         '<label>Zobrazit jako<input type="text" id="catAddDisplay" placeholder="nepovinné"></label>' +
         '<label>Ročník od<input type="number" id="catAddFrom"></label>' +
         '<label>Ročník do<input type="number" id="catAddTo"></label>' +
-        '<label>Barva<input type="color" id="catAddColor" value="#38BDF8"></label>' +
+        '<label>Barva' + colorSwatchHtml_('#38BDF8', 'id="catAddColor"') + '</label>' +
       '</div>' +
       '<div style="margin-top:10px;">' +
         '<button class="icon-btn toolbar-btn" onclick="addCategoryRow()">Přidat kategorii</button>' +
