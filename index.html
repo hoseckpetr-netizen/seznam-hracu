@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Seznam hráčů – FK Slovany Pardubice</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <style>
     :root { --accent: #00FFFF; --bg: #0b0d10; --card: #1a1e23; --border: #262b31; --text: #eef1f3; --muted: #9aa2ab; --green: #34D399; --red: #f87171; }
     * { box-sizing: border-box; }
@@ -79,11 +77,6 @@
 
     /* Map view */
     #mapContainer { background: var(--card); }
-    .leaflet-popup-content-wrapper { background: #1a1e23; color: #eef1f3; border-radius: 10px; }
-    .leaflet-popup-tip { background: #1a1e23; }
-    .leaflet-popup-content { font-family: 'Poppins', sans-serif; font-size: 12px; }
-    .leaflet-popup-content b { font-size: 13px; }
-    .leaflet-container a.leaflet-popup-close-button { color: #9aa2ab; }
 
     /* Print-only share view (player card / roster list as PDF via browser print) */
     #printArea { display: none; }
@@ -190,7 +183,9 @@
   var state = { category: 'Vše', rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {} };
   var tokenClient = null;
   var accessToken = null;
-  var mapInstance = null, markersLayer = null, geocodeCache = {}, mapLoadToken = 0;
+  var mapInstance = null, markersLayer = [], geocodeCache = {}, mapLoadToken = 0;
+  var GOOGLE_MAPS_API_KEY = 'AIzaSyDNKC_KrPB2MbQou6yapLMv59Q2aoZRYP4';
+  var googleMapsLoadPromise = null;
 
   window.onerror = function(msg, src, line, col, err) {
     var el = document.getElementById('main');
@@ -598,21 +593,39 @@
     window.print();
   }
 
-  // ---------- Mapa hráčů (Leaflet + OpenStreetMap, addresses geocoded client-side) ----------
+  // ---------- Mapa hráčů (Google Maps JavaScript API + Geocoding API, addresses geocoded client-side) ----------
   function loadGeocodeCache() {
-    try { geocodeCache = JSON.parse(localStorage.getItem('fks_geocode_cache') || '{}'); } catch (e) { geocodeCache = {}; }
+    try { geocodeCache = JSON.parse(localStorage.getItem('fks_geocode_cache_gmaps') || '{}'); } catch (e) { geocodeCache = {}; }
   }
   function saveGeocodeCache() {
-    try { localStorage.setItem('fks_geocode_cache', JSON.stringify(geocodeCache)); } catch (e) {}
+    try { localStorage.setItem('fks_geocode_cache_gmaps', JSON.stringify(geocodeCache)); } catch (e) {}
   }
   function addressKey(p) {
     return [p.ulice, p.cp, p.mesto, p.psc].filter(Boolean).join(', ');
   }
+  function loadGoogleMaps() {
+    if (googleMapsLoadPromise) return googleMapsLoadPromise;
+    googleMapsLoadPromise = new Promise(function(resolve, reject) {
+      if (window.google && window.google.maps) { resolve(window.google); return; }
+      window.__onGoogleMapsLoaded = function() { resolve(window.google); };
+      var script = document.createElement('script');
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + GOOGLE_MAPS_API_KEY + '&callback=__onGoogleMapsLoaded&loading=async';
+      script.async = true;
+      script.defer = true;
+      script.onerror = function() { googleMapsLoadPromise = null; reject(new Error('load-failed')); };
+      document.head.appendChild(script);
+    });
+    return googleMapsLoadPromise;
+  }
   function geocodeAddress(addr) {
     if (Object.prototype.hasOwnProperty.call(geocodeCache, addr)) return Promise.resolve(geocodeCache[addr]);
-    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cz&q=' + encodeURIComponent(addr);
-    return fetch(url, { headers: { 'Accept-Language': 'cs' } }).then(function(r) { return r.json(); }).then(function(data) {
-      var loc = (data && data[0]) ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+    var url = 'https://maps.googleapis.com/maps/api/geocode/json?region=cz&address=' + encodeURIComponent(addr + ', Česká republika') + '&key=' + GOOGLE_MAPS_API_KEY;
+    return fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      var loc = null;
+      if (data && data.status === 'OK' && data.results && data.results[0]) {
+        var loc0 = data.results[0].geometry.location;
+        loc = { lat: loc0.lat, lon: loc0.lng };
+      }
       geocodeCache[addr] = loc;
       saveGeocodeCache();
       return loc;
@@ -623,25 +636,34 @@
     });
   }
   function initMapIfNeeded() {
-    if (mapInstance) { setTimeout(function() { mapInstance.invalidateSize(); }, 0); return; }
-    mapInstance = L.map('mapContainer').setView([50.0343, 15.7812], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap',
-      maxZoom: 19
-    }).addTo(mapInstance);
-    markersLayer = L.layerGroup().addTo(mapInstance);
+    if (mapInstance) {
+      setTimeout(function() { google.maps.event.trigger(mapInstance, 'resize'); }, 0);
+      return Promise.resolve();
+    }
+    return loadGoogleMaps().then(function(google) {
+      mapInstance = new google.maps.Map(document.getElementById('mapContainer'), {
+        center: { lat: 50.0343, lng: 15.7812 },
+        zoom: 12,
+        streetViewControl: false,
+        mapTypeControl: false
+      });
+      markersLayer = [];
+    });
   }
   function plotPlayersOnMap(players) {
     var myToken = ++mapLoadToken;
     loadGeocodeCache();
-    markersLayer.clearLayers();
+    markersLayer.forEach(function(m) { m.setMap(null); });
+    markersLayer = [];
     var statusEl = document.getElementById('mapStatus');
-    var done = 0, shown = 0, bounds = [];
+    var done = 0, shown = 0;
+    var bounds = new google.maps.LatLngBounds();
+    var hasBounds = false;
     function step(i) {
       if (myToken !== mapLoadToken) return; // a newer map load superseded this one
       if (i >= players.length) {
         if (statusEl) statusEl.textContent = shown + ' z ' + players.length + ' hráčů zobrazeno na mapě (podle adresy).';
-        if (bounds.length) mapInstance.fitBounds(bounds, { padding: [30, 30] });
+        if (hasBounds) mapInstance.fitBounds(bounds, 30);
         return;
       }
       var p = players[i];
@@ -653,20 +675,37 @@
         done++;
         if (statusEl) statusEl.textContent = 'Načítám polohy hráčů… ' + done + '/' + players.length;
         if (loc) {
-          var marker = L.circleMarker([loc.lat, loc.lon], { radius: 7, color: p.categoryColor, fillColor: p.categoryColor, fillOpacity: 0.85, weight: 2 });
-          marker.bindPopup('<b>' + esc(p.jmenoCele) + '</b><br>' + esc(p.categoryGroup) + (p.mesto ? ' · ' + esc(p.mesto) : ''));
-          marker.addTo(markersLayer);
-          bounds.push([loc.lat, loc.lon]);
+          var pos = { lat: loc.lat, lng: loc.lon };
+          var marker = new google.maps.Marker({
+            position: pos,
+            map: mapInstance,
+            title: p.jmenoCele,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 7,
+              fillColor: p.categoryColor,
+              fillOpacity: 0.85,
+              strokeColor: p.categoryColor,
+              strokeWeight: 2
+            }
+          });
+          var info = new google.maps.InfoWindow({
+            content: '<div style="font-family:\'Poppins\',sans-serif;font-size:12px;color:#1a1e23;"><b style="font-size:13px;">' + esc(p.jmenoCele) + '</b><br>' + esc(p.categoryGroup) + (p.mesto ? ' · ' + esc(p.mesto) : '') + '</div>'
+          });
+          marker.addListener('click', function() { info.open({ anchor: marker, map: mapInstance }); });
+          markersLayer.push(marker);
+          bounds.extend(pos);
+          hasBounds = true;
           shown++;
         }
-        if (wasCached) step(i + 1); else setTimeout(function() { step(i + 1); }, 1100);
+        if (wasCached) step(i + 1); else setTimeout(function() { step(i + 1); }, 200);
       });
     }
     step(0);
   }
   function renderMapView() {
-    return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám polohy hráčů…</div></div>' +
-      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.category === 'Vše' ? 'všechny kategorie' : state.category) + '). Polohy jsou přibližné odhady podle adresy, zdroj: OpenStreetMap.</div>' +
+    return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám mapu…</div></div>' +
+      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.category === 'Vše' ? 'všechny kategorie' : state.category) + '). Polohy jsou přibližné odhady podle adresy, zdroj: Google Maps.</div>' +
       '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
   }
 
@@ -777,8 +816,14 @@
       document.getElementById('cityFilter').addEventListener('change', function(e) { state.city = e.target.value; render(); });
     }
     if (state.view === 'map') {
-      initMapIfNeeded();
-      plotPlayersOnMap(filteredPlayers());
+      var myRenderToken = ++mapLoadToken;
+      initMapIfNeeded().then(function() {
+        if (myRenderToken !== mapLoadToken) return; // a newer render superseded this one
+        plotPlayersOnMap(filteredPlayers());
+      }).catch(function() {
+        var statusEl = document.getElementById('mapStatus');
+        if (statusEl) statusEl.textContent = 'Mapu se nepodařilo načíst. Zkuste to prosím znovu.';
+      });
     }
   }
 
