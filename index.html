@@ -1658,10 +1658,23 @@
         '<td><input type="text" class="cat-in" data-field="display" placeholder="' + esc(r.label) + '" value="' + (r.display !== r.label ? esc(r.display) : '') + '" style="width:80px;"></td>' +
         yearInputs +
         '<td><a href="javascript:void(0)" onclick="toggleCategoryPlayerList(this, \'' + esc(r.id) + '\')">' + players.length + '</a>' + playerList + '</td>' +
-        '<td style="text-align:center;"><input type="checkbox" class="cat-in" data-field="showFilter"' + (r.hideFilter ? '' : ' checked') + ' title="Zobrazit tuto kategorii jako filtr na úvodní stránce"></td>' +
+        '<td style="text-align:center;"><input type="checkbox" class="cat-in" data-field="showFilter"' + (r.hideFilter ? '' : ' checked') + ' title="Zobrazit tuto kategorii jako filtr na úvodní stránce" onchange="toggleCategoryFilterVisibility(this, \'' + jsStr(r.label) + '\')"></td>' +
         '<td>' + (r.sheetBacked ? '<input type="checkbox" class="cat-in" data-field="delete">' : '') + '</td>' +
       '</tr>';
     }).join('') || '<tr><td colspan="8" class="loading">Žádné kategorie nenalezeny.</td></tr>';
+  }
+  // The "Ve filtru" checkbox applies immediately — it's a lightweight per-browser display
+  // preference (like a light switch), not a change that should wait behind the "Uložit
+  // změny kategorií" button, which is for the heavier sheet writes (ročník od/do). Without
+  // this, unchecking it silently did nothing until Save was also clicked, which read as a bug.
+  function toggleCategoryFilterVisibility(checkbox, label) {
+    var overrides = loadCategoryColorOverrides_();
+    var existing = overrides[label] || {};
+    overrides[label] = { color: existing.color || null, display: existing.display || null, hideFilter: !checkbox.checked };
+    saveCategoryColorOverrides_(overrides);
+    var rule = (DATA.categoryRules || []).find(function(r) { return r.label === label; });
+    if (rule) rule.hideFilter = !checkbox.checked;
+    renderCatList();
   }
   function toggleCategoryPlayerList(link, id) {
     var row = link.closest('tr');
