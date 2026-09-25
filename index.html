@@ -422,6 +422,17 @@
   function loadPhotoCache() {
     try { return JSON.parse(localStorage.getItem(PHOTO_CACHE_KEY) || '{}'); } catch (e) { return {}; }
   }
+  // Single shared in-memory cache object, loaded once. Photo imports run several at a time
+  // (bulk import uses a worker pool), and each one used to call loadPhotoCache() fresh from
+  // localStorage right before saving — with several imports in flight at once, a later one's
+  // read-modify-write would silently overwrite an earlier one's write because it started from
+  // a stale snapshot, losing already-imported photos. Everything now reads and writes this one
+  // shared object instead, so concurrent imports only ever add to it, never clobber each other.
+  var photoCacheMem = null;
+  function getPhotoCacheMem() {
+    if (!photoCacheMem) photoCacheMem = loadPhotoCache();
+    return photoCacheMem;
+  }
   function savePhotoCache(cache) {
     try {
       localStorage.setItem(PHOTO_CACHE_KEY, JSON.stringify(cache));
@@ -439,7 +450,7 @@
   // network), called right after loadData() so previously-imported photos show immediately.
   function applyCachedPhotosToRoster() {
     if (!DATA || !DATA.players) return;
-    var cache = loadPhotoCache();
+    var cache = getPhotoCacheMem();
     DATA.players.forEach(function(p) {
       var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
       if (cache[key]) p.photoDataUrl = cache[key];
@@ -488,7 +499,7 @@
   // and caches it. Triggered from toggleChecklistItem when "FOTO PC" is checked on.
   function importPlayerPhoto(p, silent, skipRender) {
     var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
-    var cache = loadPhotoCache();
+    var cache = getPhotoCacheMem();
     if (cache[key]) { p.photoDataUrl = cache[key]; if (!skipRender) render(); return Promise.resolve(true); }
     return ensurePhotoIndex().then(function(idx) {
       var f = idx[key];
