@@ -904,7 +904,6 @@
       emailHrac: col_(map, 'E-mail', 0),
       telefonHrac: col_(map, 'Telefon', 0),
       id: col_(map, 'ID'),
-      facrId: col_(map, 'FAČR ID'),
       zastupceJmeno: zastupceJmenoIdx,
       zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
       zastupceEmail: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 2 : -1,
@@ -959,7 +958,6 @@
         emailHrac: val_(row, idx.emailHrac),
         telefonHrac: val_(row, idx.telefonHrac),
         id: val_(row, idx.id),
-        facrId: val_(row, idx.facrId),
         zastupceJmeno: val_(row, idx.zastupceJmeno),
         zastupceTelefon: val_(row, idx.zastupceTelefon),
         zastupceEmail: val_(row, idx.zastupceEmail),
@@ -1403,7 +1401,7 @@
     }).join('');
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
     document.getElementById('modalBox').innerHTML =
-      '<h2>' + esc(p.jmenoCele) + (p.id ? ' <span class="detail-id">ID ' + esc(p.id) + '</span>' : '') + '</h2>' +
+      '<h2>' + esc(p.jmenoCele) + (p.id ? ' <span class="detail-id">FAČR ID ' + esc(p.id) + '</span>' : '') + '</h2>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + ' · vyřazen ' + esc(p.datumVyrazeni) + '</div>' +
       '<div class="info-row"><span>Telefon hráče</span><span class="info-value">' + (esc(p.telefonHrac) || '—') + '</span></div>' +
       '<div class="info-row"><span>E-mail hráče</span><span class="info-value">' + (esc(p.emailHrac) || '—') + '</span></div>' +
@@ -1474,8 +1472,7 @@
         '<tr><td><b>Kategorie</b></td><td>' + esc(p.categoryGroup) + ' (' + esc(p.kategorie) + ')</td></tr>' +
         '<tr><td><b>Ročník</b></td><td>' + esc(p.rok) + '</td></tr>' +
         '<tr><td><b>Datum narození</b></td><td>' + esc(p.datumNarozeni) + (p.vek ? ' (' + esc(p.vek) + ' let)' : '') + '</td></tr>' +
-        '<tr><td><b>ID</b></td><td>' + (esc(p.id) || '—') + '</td></tr>' +
-        '<tr><td><b>FAČR ID</b></td><td>' + (esc(p.facrId) || '—') + '</td></tr>' +
+        '<tr><td><b>FAČR ID</b></td><td>' + (esc(p.id) || '—') + '</td></tr>' +
         '<tr><td><b>Adresa</b></td><td>' + (esc(addressLine) || '—') + '</td></tr>' +
         '<tr><td><b>Telefon hráče</b></td><td>' + (esc(p.telefonHrac) || '—') + '</td></tr>' +
         '<tr><td><b>E-mail hráče</b></td><td>' + (esc(p.emailHrac) || '—') + '</td></tr>' +
@@ -1494,8 +1491,8 @@
   }
 
   // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
-  var EDIT_FIELDS = ['facrId', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
-  var EDIT_FIELD_LABELS = { facrId: 'FAČR ID', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
+  var EDIT_FIELDS = ['id', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
+  var EDIT_FIELD_LABELS = { id: 'FAČR ID', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
 
   function openEditModal(sheetRow) {
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
@@ -1512,7 +1509,7 @@
       return '<div class="form-row"><label for="ef_' + id + '">' + esc(label) + '</label><input id="ef_' + id + '" type="text" value="' + esc(value || '') + '"></div>';
     }
     return '<h2>Upravit údaje — ' + esc(p.jmenoCele) + '</h2>' +
-      field('facrId', EDIT_FIELD_LABELS.facrId, p.facrId) +
+      field('id', EDIT_FIELD_LABELS.id, p.id) +
       field('telefonHrac', EDIT_FIELD_LABELS.telefonHrac, p.telefonHrac) +
       field('emailHrac', EDIT_FIELD_LABELS.emailHrac, p.emailHrac) +
       field('zastupceJmeno', EDIT_FIELD_LABELS.zastupceJmeno, p.zastupceJmeno) +
@@ -2413,8 +2410,7 @@
         '<div class="detail-info">' +
           '<div class="detail-name-row">' +
             '<div class="detail-name">' + esc(p.jmenoCele) + '</div>' +
-            (p.id ? '<span class="detail-id">ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') +
-            (p.facrId ? '<span class="detail-id">FAČR ID ' + esc(p.facrId) + '</span>' + copyBtnHtml(p.facrId) : '') +
+            (p.id ? '<span class="detail-id">FAČR ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') +
           '</div>' +
           '<div class="detail-meta">' +
             '<span class="cat-pill" style="background:' + esc(p.categoryColor) + ';color:' + esc(contrastTextColor_(p.categoryColor)) + '">' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' +
