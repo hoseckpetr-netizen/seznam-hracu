@@ -577,6 +577,22 @@
     // to its right (confirmed against the real header layout).
     var zastupceJmenoIdx = findColBySubstring_(header, 'Zákonný zástupce');
 
+    // Some players also have a SECOND guardian. In the real sheet this block's
+    // own header row just says plain "Jméno"/"Telefon"/"E-mail" (no distinguishing
+    // text), but two rows above the header row there is a group-title cell reading
+    // "2.   Z Á S T U P C E " (letter-spaced, stylized) directly above the "Jméno"
+    // column of that block — mirroring how the first guardian's "Zákonný zástupce"
+    // block is laid out. Detected by a normalized (whitespace-stripped, uppercased)
+    // substring match so the exact spacing/styling doesn't matter.
+    var zastupce2Idx = -1;
+    if (headerRowIdx >= 2) {
+      var groupRow = values[headerRowIdx - 2] || [];
+      for (var gi = 0; gi < groupRow.length; gi++) {
+        var norm = (groupRow[gi] || '').toString().toUpperCase().replace(/\s+/g, '');
+        if (norm.indexOf('ZÁSTUPCE') !== -1 && norm.indexOf('2') !== -1) { zastupce2Idx = gi; break; }
+      }
+    }
+
     var idx = {
       prijmeni: col_(map, 'Příjmení'),
       jmeno: col_(map, 'Jméno', 0),
@@ -596,6 +612,9 @@
       zastupceJmeno: zastupceJmenoIdx,
       zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
       zastupceEmail: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 2 : -1,
+      zastupce2Jmeno: zastupce2Idx,
+      zastupce2Telefon: zastupce2Idx >= 0 ? zastupce2Idx + 1 : -1,
+      zastupce2Email: zastupce2Idx >= 0 ? zastupce2Idx + 2 : -1,
       checklistCols: (function() {
         var m = {};
         CHECKLIST_KEYS.forEach(function(key) { m[key] = col_(map, key); });
@@ -637,6 +656,9 @@
         zastupceJmeno: val_(row, idx.zastupceJmeno),
         zastupceTelefon: val_(row, idx.zastupceTelefon),
         zastupceEmail: val_(row, idx.zastupceEmail),
+        zastupce2Jmeno: val_(row, idx.zastupce2Jmeno),
+        zastupce2Telefon: val_(row, idx.zastupce2Telefon),
+        zastupce2Email: val_(row, idx.zastupce2Email),
         checklist: checklist
       });
     }
@@ -878,6 +900,10 @@
         '<tr><td><b>Zákonný zástupce</b></td><td>' + (esc(p.zastupceJmeno) || '—') + '</td></tr>' +
         '<tr><td><b>Telefon zástupce</b></td><td>' + (esc(p.zastupceTelefon) || '—') + '</td></tr>' +
         '<tr><td><b>E-mail zástupce</b></td><td>' + (esc(p.zastupceEmail) || '—') + '</td></tr>' +
+        ((p.zastupce2Jmeno || p.zastupce2Telefon || p.zastupce2Email) ?
+          '<tr><td><b>2. zákonný zástupce</b></td><td>' + (esc(p.zastupce2Jmeno) || '—') + '</td></tr>' +
+          '<tr><td><b>Telefon 2. zástupce</b></td><td>' + (esc(p.zastupce2Telefon) || '—') + '</td></tr>' +
+          '<tr><td><b>E-mail 2. zástupce</b></td><td>' + (esc(p.zastupce2Email) || '—') + '</td></tr>' : '') +
       '</tbody></table>' +
       '<h2>Registrační checklist (' + c.done + '/' + c.total + ')</h2>' +
       '<table><thead><tr><th>Položka</th><th>Splněno</th></tr></thead><tbody>' + checklistRows + '</tbody></table>';
@@ -886,8 +912,8 @@
   }
 
   // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
-  var EDIT_FIELDS = ['telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'ulice', 'cp', 'mesto', 'psc'];
-  var EDIT_FIELD_LABELS = { telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
+  var EDIT_FIELDS = ['telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
+  var EDIT_FIELD_LABELS = { telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
 
   function openEditModal(sheetRow) {
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
@@ -909,6 +935,9 @@
       field('zastupceJmeno', EDIT_FIELD_LABELS.zastupceJmeno, p.zastupceJmeno) +
       field('zastupceTelefon', EDIT_FIELD_LABELS.zastupceTelefon, p.zastupceTelefon) +
       field('zastupceEmail', EDIT_FIELD_LABELS.zastupceEmail, p.zastupceEmail) +
+      field('zastupce2Jmeno', EDIT_FIELD_LABELS.zastupce2Jmeno, p.zastupce2Jmeno) +
+      field('zastupce2Telefon', EDIT_FIELD_LABELS.zastupce2Telefon, p.zastupce2Telefon) +
+      field('zastupce2Email', EDIT_FIELD_LABELS.zastupce2Email, p.zastupce2Email) +
       field('ulice', EDIT_FIELD_LABELS.ulice, p.ulice) +
       field('cp', EDIT_FIELD_LABELS.cp, p.cp) +
       field('mesto', EDIT_FIELD_LABELS.mesto, p.mesto) +
@@ -1346,6 +1375,7 @@
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
     var mapsHref = addressLine ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addressLine + ', Česká republika') : null;
     var isAdmin = DATA.role === 'admin';
+    var hasZastupce2 = !!(p.zastupce2Jmeno || p.zastupce2Telefon || p.zastupce2Email);
 
     function contactRow(label, value, isPhone) {
       var link = value ? ('<a href="' + (isPhone ? 'tel:' : 'mailto:') + esc(value) + '">' + esc(value) + '</a>') : '—';
@@ -1363,7 +1393,7 @@
         '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 160) + '</div></div>' +
         '<div>' +
           '<div class="detail-name">' + esc(p.jmenoCele) + (p.id ? '<span class="detail-id">ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') + '</div>' +
-          '<div class="detail-sub"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + ' · ' + esc(p.kategorie) + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</div>' +
+          '<div class="detail-sub"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + (p.kategorie ? ' · ' + esc(p.kategorie) : '') + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</div>' +
           '<div class="detail-progress">' + c.done + '/' + c.total + ' kroků hotovo</div>' +
         '</div>' +
       '</div>' +
@@ -1379,6 +1409,13 @@
           contactRow('Telefon', p.zastupceTelefon, true) +
           contactRow('E-mail', p.zastupceEmail, false) +
         '</div>' +
+        (hasZastupce2 ? (
+        '<div class="info-box">' +
+          '<span class="box-title">2. zákonný zástupce</span>' +
+          '<div class="info-row"><span>Jméno</span><span class="info-value">' + (esc(p.zastupce2Jmeno) || '—') + (p.zastupce2Jmeno ? copyBtnHtml(p.zastupce2Jmeno) : '') + '</span></div>' +
+          contactRow('Telefon', p.zastupce2Telefon, true) +
+          contactRow('E-mail', p.zastupce2Email, false) +
+        '</div>') : '') +
         '<div class="info-box">' +
           '<span class="box-title">Adresa</span>' +
           (mapsHref ? '<a href="' + esc(mapsHref) + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--text);text-decoration:none;">' + esc(addressLine) + '</a>' : '<span style="font-size:13px;">—</span>') +
