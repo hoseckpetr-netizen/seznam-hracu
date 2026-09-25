@@ -79,8 +79,13 @@
     .cat-pill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; letter-spacing: 0.2px; white-space: nowrap; }
     .detail-progress-wrap { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
     .detail-progress-bar { width: 160px; max-width: 40vw; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; flex-shrink: 0; }
-    .detail-progress-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+    .detail-progress-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .7s cubic-bezier(.22,.9,.34,1); }
     .detail-progress-label { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+    @keyframes detailFadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes detailPhotoPop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    .detail-head { animation: detailFadeInUp .4s ease; }
+    .detail-head .detail-photo { animation: detailPhotoPop .4s ease; }
+    .detail-grid { animation: detailFadeInUp .45s ease .06s backwards; }
     .detail-name-row .detail-id { margin-left: 0; }
     .detail-grid { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
     .settings-sub { font-size: 13px; color: var(--muted); margin: -10px 0 18px; }
@@ -2360,6 +2365,7 @@
     if (!p) { state.view = 'list'; return renderListView(); }
     var c = checklistCounts(p);
     var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+    var progressLabel = (c.total > 0 && c.done === c.total) ? 'Vše hotovo' : (c.done + '/' + c.total + ' kroků hotovo');
 
     var isAdmin = DATA.role === 'admin';
     var checklistRows = activeChecklistKeys(p).map(function(key) {
@@ -2404,8 +2410,8 @@
             (p.vek ? '<span class="meta-sep">·</span><span>' + esc(p.vek) + ' let</span>' : '') +
           '</div>' +
           '<div class="detail-progress-wrap">' +
-            '<div class="detail-progress-bar"><div class="detail-progress-fill" style="width:' + pct + '%;background:' + esc(p.categoryColor) + '"></div></div>' +
-            '<span class="detail-progress-label" style="color:' + esc(p.categoryColor) + '">' + c.done + '/' + c.total + ' kroků hotovo</span>' +
+            '<div class="detail-progress-bar"><div class="detail-progress-fill" id="detailProgressFill" data-pct="' + pct + '" style="width:0%;background:' + esc(p.categoryColor) + '"></div></div>' +
+            '<span class="detail-progress-label" style="color:' + esc(p.categoryColor) + '">' + progressLabel + '</span>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -2442,7 +2448,17 @@
 
   function render() {
     var main = document.getElementById('main');
-    if (state.view === 'detail') { main.innerHTML = renderDetailView(); }
+    if (state.view === 'detail') {
+      main.innerHTML = renderDetailView();
+      // The fill is rendered at width:0 on purpose — flipping it to its real value one frame
+      // later (after the browser has painted the 0% state) is what makes the CSS transition on
+      // .detail-progress-fill actually animate, instead of just appearing already full.
+      var fillEl = document.getElementById('detailProgressFill');
+      if (fillEl) {
+        var targetPct = fillEl.getAttribute('data-pct');
+        requestAnimationFrame(function() { requestAnimationFrame(function() { fillEl.style.width = targetPct + '%'; }); });
+      }
+    }
     else if (state.view === 'map') { main.innerHTML = renderMapView(); }
     else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
     else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
