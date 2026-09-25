@@ -74,20 +74,31 @@
     .detail-progress-label { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
     .detail-name-row .detail-id { margin-left: 0; }
     .detail-grid { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+    .settings-sub { font-size: 13px; color: var(--muted); margin: -10px 0 18px; }
     .info-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 280px; }
     .info-box .box-title { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
+    .box-title.box-head { display: flex; align-items: center; gap: 7px; }
+    .box-title.box-head svg { color: var(--accent); flex-shrink: 0; }
     .info-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
     .info-row span:first-child { color: var(--muted); flex-shrink: 0; }
     .info-row a { color: var(--text); text-decoration: none; }
     .info-row a:hover { color: var(--accent); }
     .info-box > a:hover { color: var(--accent) !important; text-decoration: underline !important; }
+    .cat-editor-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 0 20px; }
     .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-    .cat-editor td { padding: 6px 8px; border-bottom: 1px solid #20242a; vertical-align: middle; }
+    .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .cat-editor td { padding: 7px 8px; border-bottom: 1px solid #20242a; vertical-align: middle; }
+    .cat-editor tbody tr:hover td { background: rgba(255,255,255,0.02); }
     .cat-editor input[type="text"], .cat-editor input[type="number"] { background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; font-family: inherit; font-size: 12px; }
     .cat-editor input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; }
+    .cat-editor input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
     .cat-editor a { color: var(--accent); text-decoration: none; }
     .cat-player-list { margin-top: 6px; font-size: 12px; color: var(--muted); max-height: 160px; overflow-y: auto; }
+    .add-cat-card { margin-top: 12px; padding: 14px; border: 1px dashed var(--border); border-radius: 12px; background: rgba(255,255,255,0.015); }
+    .add-cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+    .add-cat-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+    .add-cat-grid input { width: 100%; box-sizing: border-box; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-family: inherit; font-size: 13px; }
+    .add-cat-grid input[type="color"] { padding: 2px; height: 32px; }
     .checklist-wrap { display: flex; flex-direction: column; }
     .checklist-row { display: flex; align-items: center; gap: 10px; padding: 3px 2px; border-bottom: 1px solid #20242a; }
     .checklist-row:last-child { border-bottom: none; }
@@ -183,6 +194,13 @@
       .detail-photo { width: 84px; height: 108px; font-size: 18px; }
       .detail-name { font-size: 16px; }
       .detail-progress-bar { width: 110px; }
+      .settings-sub { margin: -6px 0 14px; font-size: 12px; }
+      .info-box { padding: 14px 14px; gap: 10px; }
+      .cat-editor-wrap { margin: 0 -14px; padding: 0 14px; }
+      .cat-editor { font-size: 11px; }
+      .cat-editor th, .cat-editor td { padding: 5px 5px; }
+      .cat-editor input[type="text"], .cat-editor input[type="number"] { font-size: 11px; }
+      .add-cat-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -1035,6 +1053,7 @@
               id: r.id, sheetRow: r.sheetRow, label: r.label, from: r.from, to: r.to,
               color: (ov && ov.color) || colorForLabel_(r.label),
               display: (ov && ov.display) || CATEGORY_LABEL_DISPLAY[r.label] || r.label,
+              hideFilter: !!(ov && ov.hideFilter),
               sheetBacked: true
             };
           });
@@ -1063,7 +1082,7 @@
             var ov = catOverrides[label];
             var color = (ov && ov.color) || colorForLabel_(label);
             var display = (ov && ov.display) || CATEGORY_LABEL_DISPLAY[label] || label;
-            rulesWithColor.push({ id: 'orphan_' + label, sheetRow: null, label: label, from: null, to: null, color: color, display: display, sheetBacked: false });
+            rulesWithColor.push({ id: 'orphan_' + label, sheetRow: null, label: label, from: null, to: null, color: color, display: display, hideFilter: !!(ov && ov.hideFilter), sheetBacked: false });
           });
           // Re-apply colors now that orphan rules (and their possible per-browser color
           // overrides) exist, so a player in an orphan group gets the customized color too.
@@ -1639,9 +1658,10 @@
         '<td><input type="text" class="cat-in" data-field="display" placeholder="' + esc(r.label) + '" value="' + (r.display !== r.label ? esc(r.display) : '') + '" style="width:80px;"></td>' +
         yearInputs +
         '<td><a href="javascript:void(0)" onclick="toggleCategoryPlayerList(this, \'' + esc(r.id) + '\')">' + players.length + '</a>' + playerList + '</td>' +
+        '<td style="text-align:center;"><input type="checkbox" class="cat-in" data-field="showFilter"' + (r.hideFilter ? '' : ' checked') + ' title="Zobrazit tuto kategorii jako filtr na úvodní stránce"></td>' +
         '<td>' + (r.sheetBacked ? '<input type="checkbox" class="cat-in" data-field="delete">' : '') + '</td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="7" class="loading">Žádné kategorie nenalezeny.</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="loading">Žádné kategorie nenalezeny.</td></tr>';
   }
   function toggleCategoryPlayerList(link, id) {
     var row = link.closest('tr');
@@ -1650,15 +1670,17 @@
     listEl.style.display = listEl.style.display === 'none' ? 'block' : 'none';
   }
   function renderCategoryAddRow_() {
-    return '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">' +
-      '<span style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">Přidat kategorii</span>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-        '<input type="text" id="catAddCode" placeholder="Kód (např. U8)" style="width:100px;">' +
-        '<input type="text" id="catAddDisplay" placeholder="Zobrazit jako (nepovinné)" style="width:140px;">' +
-        '<input type="number" id="catAddFrom" placeholder="Od" style="width:70px;">' +
-        '<input type="number" id="catAddTo" placeholder="Do" style="width:70px;">' +
-        '<input type="color" id="catAddColor" value="#38BDF8">' +
-        '<button class="icon-btn toolbar-btn" onclick="addCategoryRow()">Přidat</button>' +
+    return '<div class="add-cat-card">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--text);display:block;margin-bottom:10px;">Přidat kategorii</span>' +
+      '<div class="add-cat-grid">' +
+        '<label>Kód<input type="text" id="catAddCode" placeholder="např. U8"></label>' +
+        '<label>Zobrazit jako<input type="text" id="catAddDisplay" placeholder="nepovinné"></label>' +
+        '<label>Ročník od<input type="number" id="catAddFrom"></label>' +
+        '<label>Ročník do<input type="number" id="catAddTo"></label>' +
+        '<label>Barva<input type="color" id="catAddColor" value="#38BDF8"></label>' +
+      '</div>' +
+      '<div style="margin-top:10px;">' +
+        '<button class="icon-btn toolbar-btn" onclick="addCategoryRow()">Přidat kategorii</button>' +
       '</div>' +
       '<div id="catAddStatus" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>' +
     '</div>';
@@ -1703,7 +1725,9 @@
       var sheetBacked = row.getAttribute('data-sheet-backed') === '1';
       var color = row.querySelector('[data-field="color"]').value;
       var display = row.querySelector('[data-field="display"]').value.trim();
-      localOverrides[label] = { color: color, display: display || null };
+      var showFilterEl = row.querySelector('[data-field="showFilter"]');
+      var hideFilter = showFilterEl ? !showFilterEl.checked : false;
+      localOverrides[label] = { color: color, display: display || null, hideFilter: hideFilter };
       if (!sheetBacked) return;
       if (sheetRow > maxSheetRow) maxSheetRow = sheetRow;
       var del = row.querySelector('[data-field="delete"]').checked;
@@ -1757,35 +1781,41 @@
       return '<div class="info-row"><span>' + esc(CHECKLIST_LABELS[key] || key) + '</span><span style="color:var(--muted);font-size:11px;">' + esc(key) + '</span></div>';
     }).join('');
 
+    var iconTag = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13 21l-9-9V4h8l9 9.41a2 2 0 0 1 0 2.83z"></path><circle cx="7.5" cy="7.5" r="1.5"></circle></svg>';
+    var iconList = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11"></path><path d="M9 12h11"></path><path d="M9 18h11"></path><path d="M4 6h.01"></path><path d="M4 12h.01"></path><path d="M4 18h.01"></path></svg>';
+    var iconCamera = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
+    var iconUpload = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>';
+
     return '<div class="header"><h1>Nastavení</h1></div>' +
+      '<div class="settings-sub">Správa kategorií, checklistu, fotek a importu nových hráčů.</div>' +
       '<div class="detail-grid">' +
         '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title">Kategorie</span>' +
+          '<span class="box-title box-head">' + iconTag + '<span>Kategorie</span></span>' +
           renderCategoryOverlapWarning_() +
-          '<table class="cat-editor"><thead><tr>' +
-            '<th></th><th>Kód</th><th>Zobrazit jako</th><th>Ročník od</th><th>Ročník do</th><th>Hráčů</th><th>Smazat</th>' +
-          '</tr></thead><tbody>' + catRows + '</tbody></table>' +
+          '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
+            '<th></th><th>Kód</th><th>Zobrazit jako</th><th>Ročník od</th><th>Ročník do</th><th>Hráčů</th><th>Ve filtru</th><th>Smazat</th>' +
+          '</tr></thead><tbody>' + catRows + '</tbody></table></div>' +
           '<div id="catPlayerLists"></div>' +
           renderCategoryAddRow_() +
-          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;">' +
+          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
             '<button class="icon-btn toolbar-btn" onclick="saveCategoryRules()">Uložit změny kategorií</button>' +
             '<span id="catSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
           '</div>' +
-          '<span class="phase-note">Ročník od/do se ukládá do listu "Kategorie" v tabulce (viditelné i pro ostatní). Barva a "zobrazit jako" se zatím ukládají jen v tomto prohlížeči — list "Kategorie" má vedle sloupce s kategorií ještě nedokončený sloupec pro příští sezónu, který nechci přepisovat. Kategorie bez vlastního řádku (např. "Muži") se sem doplňují automaticky podle toho, co mají hráči vyplněné.</span>' +
+          '<span class="phase-note">Ročník od/do se ukládá do listu "Kategorie" v tabulce (viditelné i pro ostatní). Barva, "zobrazit jako" a "Ve filtru" se zatím ukládají jen v tomto prohlížeči — list "Kategorie" má vedle sloupce s kategorií ještě nedokončený sloupec pro příští sezónu, který nechci přepisovat. Kategorie bez vlastního řádku (např. "Muži") se sem doplňují automaticky podle toho, co mají hráči vyplněné. Odškrtnutím "Ve filtru" kategorie zmizí z filtrů na úvodní stránce, hráči v ní zůstanou v seznamu beze změny.</span>' +
         '</div>' +
         '<div class="info-box">' +
-          '<span class="box-title">Položky checklistu</span>' +
+          '<span class="box-title box-head">' + iconList + '<span>Položky checklistu</span></span>' +
           checklistRows +
           '<span class="phase-note">Úprava/přidání položek checklistu přímo v appce bude v další verzi.</span>' +
         '</div>' +
         '<div class="info-box">' +
-          '<span class="box-title">Fotky hráčů</span>' +
+          '<span class="box-title box-head">' + iconCamera + '<span>Fotky hráčů</span></span>' +
           '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Jednorázově naimportuje fotky ze složky "Fotky hráčů" na Disku pro všechny hráče, kteří ji ještě nemají. Nově přidaní hráči se pak řeší jednotlivě zaškrtnutím "FOTO PC".</div>' +
           '<button class="icon-btn toolbar-btn" onclick="bulkImportAllPhotos()">Naimportovat fotky pro všechny hráče</button>' +
           '<div id="bulkPhotoStatus" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>' +
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title">Import nových hráčů z KIS (XLS export)</span>' +
+          '<span class="box-title box-head">' + iconUpload + '<span>Import nových hráčů z KIS (XLS export)</span></span>' +
           '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Jméno, příjmení, datum narození, adresa, kontakty hráče i rodiče se přenesou automaticky; nový hráč dostane v checklistu zaškrtnutou jen položku "Registrace KIS".</div>' +
           '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
           '<div id="importPreview" style="margin-top:14px;"></div>' +
@@ -2129,7 +2159,7 @@
     // "Vše" is active exactly when nothing else is selected; every other chip can be
     // toggled on/off independently, so several categories (e.g. U11 + U12) can show at once.
     var html = '<div class="cat-item' + (state.categories.length === 0 ? ' active' : '') + '" data-cat="Vše"><span class="dot" style="background:#5a6169"></span>Vše</div>';
-    html += DATA.categoryRules.map(function (r) {
+    html += DATA.categoryRules.filter(function (r) { return !r.hideFilter; }).map(function (r) {
       return '<div class="cat-item' + (state.categories.indexOf(r.label) !== -1 ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
         '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
