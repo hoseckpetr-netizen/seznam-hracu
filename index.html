@@ -363,7 +363,8 @@
   // written into their own "<KEY> DATUM" column (found by header text, like every other
   // column here) the moment the item is checked. Existing players were backfilled once from
   // "Datum přidání" (column D) for whichever of these were already checked.
-  var CHECKLIST_DATE_KEYS = ['REG KIS', 'KONTAKTY', 'EMAIL', 'WHATSAPP', 'KIS SOUP', 'CASH KIS'];
+  var CHECKLIST_DATE_KEYS = ['REG KIS', 'KONTAKTY', 'EMAIL', 'WHATSAPP', 'KIS SOUP', 'CASH KIS',
+    'REG FAČR', 'CASH FAČR', 'ČL KLUBU', 'HR KLUBU', 'FOTO PC', 'FOTO FAČR', 'SOUHL KIS', 'PL. JARO'];
   function formatDateCz_(d) {
     d = d || new Date();
     return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
@@ -1553,8 +1554,8 @@
   // Clicking a checklist row first asks for confirmation (a real click is easy to fire by
   // accident on a touch screen), then writes straight back to the matching "Seznam" sheet
   // cell. Checking "FOTO PC" additionally triggers a one-time photo import for that player
-  // (see importPlayerPhoto above). For the 6 items in CHECKLIST_DATE_KEYS, checking the item
-  // also stamps today's date into its own "<KEY> DATUM" column.
+  // (see importPlayerPhoto above). For every item in CHECKLIST_DATE_KEYS (now all checklist
+  // items), checking it also stamps today's date into its own "<KEY> DATUM" column.
   function toggleChecklistItem(sheetRow, key) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
