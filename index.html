@@ -317,7 +317,9 @@
   // Full (not read-only) Sheets scope — needed for the in-app editing feature, which
   // writes changed cells straight back to the same "Seznam hráčů" spreadsheet.
   // drive.readonly is needed to list/show player photos from the "Fotky hráčů" folder.
-  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email';
+  // contacts is needed for the "Noví uživatelé" import flow, which creates a Google Contact
+  // for the new player and their guardian (under whichever account approves the import).
+  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
   // For Radek (fkslovany@gmail.com, viewer role) to see photos too, this folder needs to
@@ -380,6 +382,14 @@
   // "Datum přidání" (column D) for whichever of these were already checked.
   var CHECKLIST_DATE_KEYS = ['REG KIS', 'KONTAKTY', 'EMAIL', 'WHATSAPP', 'KIS SOUP', 'CASH KIS',
     'REG FAČR', 'CASH FAČR', 'ČL KLUBU', 'HR KLUBU', 'FOTO PC', 'FOTO FAČR', 'SOUHL KIS', 'PL. JARO'];
+  // "Datum narození" uses a different style than every other date column in the sheet — no
+  // spaces after the dots ("29.6.2012"), unlike "Datum přidání" / the "<KEY> DATUM" columns
+  // ("29. 6. 2012" — see formatDateCz_ below). Keep the two separate so importing new players
+  // doesn't accidentally write birth dates in the wrong style.
+  function formatBirthDateCz_(d) {
+    d = d || new Date();
+    return d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear();
+  }
   function formatDateCz_(d) {
     d = d || new Date();
     return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
@@ -1067,6 +1077,71 @@
     return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
   }
 
+  // ---------- "Čekající" (new-player registrations waiting for review) ----------
+  // A plain, single-header-row sheet the app owns entirely (created once from the app, not
+  // hand-maintained like "Seznam"/"Vyřazené"), so columns are looked up by exact header text
+  // the same way as everywhere else but there's no legacy layout to work around.
+  var PENDING_SHEET = 'Čekající';
+  function parsePendingRoster_(values) {
+    if (!values || !values.length) return { rows: [], colIndex: null };
+    var header = values[0];
+    var map = buildColumnMap_(header);
+    var idx = {
+      jmeno: col_(map, 'Jméno'),
+      prijmeni: col_(map, 'Příjmení'),
+      datumNarozeni: col_(map, 'Datum narození'),
+      rok: col_(map, 'Rok'),
+      rodneCislo: col_(map, 'Rodné číslo'),
+      emailHrac: col_(map, 'E-mail'),
+      telefonHrac: col_(map, 'Telefon'),
+      ulice: col_(map, 'Ulice'),
+      cp: col_(map, 'Číslo popisné'),
+      mesto: col_(map, 'Město'),
+      psc: col_(map, 'PSČ'),
+      zastupceJmeno: col_(map, 'Zástupce - jméno'),
+      zastupceEmail: col_(map, 'Zástupce - e-mail'),
+      zastupceTelefon: col_(map, 'Zástupce - telefon'),
+      poznamka: col_(map, 'Poznámka'),
+      zdravotniOmezeni: col_(map, 'Zdravotní omezení'),
+      stav: col_(map, 'Stav'),
+      datumImportu: col_(map, 'Datum importu'),
+      datumVyrizeni: col_(map, 'Datum vyřízení'),
+      zdrojovySoubor: col_(map, 'Zdrojový soubor')
+    };
+    var rows = [];
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      var jmeno = val_(row, idx.jmeno);
+      var prijmeni = val_(row, idx.prijmeni);
+      if (!jmeno && !prijmeni) continue;
+      rows.push({
+        sheetRow: r + 1,
+        jmeno: jmeno,
+        prijmeni: prijmeni,
+        jmenoCele: (jmeno + ' ' + prijmeni).trim(),
+        datumNarozeni: val_(row, idx.datumNarozeni),
+        rok: val_(row, idx.rok),
+        rodneCislo: val_(row, idx.rodneCislo),
+        emailHrac: val_(row, idx.emailHrac),
+        telefonHrac: val_(row, idx.telefonHrac),
+        ulice: val_(row, idx.ulice),
+        cp: val_(row, idx.cp),
+        mesto: val_(row, idx.mesto),
+        psc: val_(row, idx.psc),
+        zastupceJmeno: val_(row, idx.zastupceJmeno),
+        zastupceEmail: val_(row, idx.zastupceEmail),
+        zastupceTelefon: val_(row, idx.zastupceTelefon),
+        poznamka: val_(row, idx.poznamka),
+        zdravotniOmezeni: val_(row, idx.zdravotniOmezeni),
+        stav: (val_(row, idx.stav) || 'Čeká').toString(),
+        datumImportu: val_(row, idx.datumImportu),
+        datumVyrizeni: val_(row, idx.datumVyrizeni),
+        zdrojovySoubor: val_(row, idx.zdrojovySoubor)
+      });
+    }
+    return { rows: rows, colIndex: idx };
+  }
+
   // Columns read (all relative to the detected "od" column): od, do, kód (label), and two
   // columns the app itself owns and writes — barva (hex color) and "zobrazit jako" (display
   // override, e.g. so Minipřípravka can show as U7). Older sheets without those last two
@@ -1189,7 +1264,7 @@
       }
 
       var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID +
-        '/values:batchGet?ranges=Seznam&ranges=Kategorie&ranges=' + encodeURIComponent('Vyřazené') + '&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
+        '/values:batchGet?ranges=Seznam&ranges=Kategorie&ranges=' + encodeURIComponent('Vyřazené') + '&ranges=' + encodeURIComponent('Čekající') + '&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
 
       return fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } })
         .then(function(r) {
@@ -1201,6 +1276,7 @@
           var seznamValues = (json.valueRanges[0] && json.valueRanges[0].values) || [];
           var kategorieValues = (json.valueRanges[1] && json.valueRanges[1].values) || [];
           var vyrazeneValues = (json.valueRanges[2] && json.valueRanges[2].values) || [];
+          var cekajiciValues = (json.valueRanges[3] && json.valueRanges[3].values) || [];
 
           var parsed = parseRoster_(seznamValues, 'Seznam');
           var players = parsed.players;
@@ -1265,9 +1341,21 @@
             // Missing/renamed "Vyřazené" sheet shouldn't break the main roster view.
           }
 
+          var pending = [];
+          var pendingColIndex = null;
+          try {
+            var parsedP = parsePendingRoster_(cekajiciValues);
+            pending = parsedP.rows;
+            pendingColIndex = parsedP.colIndex;
+          } catch (e) {
+            // Missing "Čekající" sheet shouldn't break the main roster view.
+          }
+
           DATA = {
             players: players,
             vyrazeni: vyrazeni,
+            pending: pending,
+            pendingColIndex: pendingColIndex,
             categoryRules: rulesWithColor,
             categoryCol: catParsed.catCol,
             cities: Object.keys(cities).sort(),
@@ -1809,13 +1897,6 @@
   }
 
   // ---------- Nastavení (přehled kategorií/checklistu, import nových hráčů z KIS) ----------
-  var importCandidates = [];
-  var KIS_COLUMNS_NOT_TRANSFERRED = ['Rodné číslo', 'Číslo orientační', 'Země', 'Poznámka', 'Zdravotní omezení'];
-
-  function formatCzechDate(d) {
-    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-    return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
-  }
 
   // ---------- Category editor (Nastavení) ----------
   // Players grouped by categoryGroup — used both for the "Hráčů" count/expandable list in
@@ -2150,9 +2231,13 @@
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title box-head">' + iconUpload + '<span>Import nových hráčů z KIS (XLS export)</span></span>' +
-          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Jméno, příjmení, datum narození, adresa, kontakty hráče i rodiče se přenesou automaticky; nový hráč dostane v checklistu zaškrtnutou jen položku "Registrace KIS".</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Záznamy se přidají do fronty "Noví uživatelé" níže — nic se nezapíše do tabulky, dokud je jednotlivě neschválíte.</div>' +
           '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
-          '<div id="importPreview" style="margin-top:14px;"></div>' +
+          '<div id="importPreview" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>' +
+        '</div>' +
+        '<div class="info-box" style="min-width:100%;">' +
+          '<span class="box-title box-head">' + iconUpload + '<span>Noví uživatelé</span></span>' +
+          renderPendingUsersBox_() +
         '</div>' +
       '</div>';
   }
@@ -2232,21 +2317,109 @@
     });
   }
 
+  // ---------- Data normalization (KIS export style → sheet style) ----------
+  // The KIS export and the "Seznam" sheet write the same kind of value in different shapes
+  // (e.g. rodné číslo "191008/1349" in the export vs. a bare 1910081349 in the sheet, a phone
+  // "+420 731 179 719" vs. a bare 731179719). These convert export → sheet style so an
+  // imported row reads exactly like one Petr typed in by hand.
+  function normalizeDigits_(v) {
+    return (v == null ? '' : v.toString()).replace(/[^0-9]/g, '');
+  }
+  function normalizePhoneSheet_(v) {
+    var d = normalizeDigits_(v);
+    if (d.length === 12 && d.slice(0, 3) === '420') d = d.slice(3);
+    return d;
+  }
+  function normalizePscSheet_(v) {
+    return normalizeDigits_(v);
+  }
+  function normalizeRodneCisloSheet_(v) {
+    return normalizeDigits_(v);
+  }
+  // Used only for the Google Contact's phone number (a different, human-dialable shape than
+  // the bare digits kept in the sheet) — the sheet's own value is left exactly as normalized.
+  function formatPhoneForContact_(digitsOnly) {
+    if (!digitsOnly) return '';
+    if (digitsOnly.length === 9) return '+420 ' + digitsOnly.slice(0, 3) + ' ' + digitsOnly.slice(3, 6) + ' ' + digitsOnly.slice(6);
+    return digitsOnly;
+  }
+  function stripDiacritics_(s) {
+    try { return s.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (e) { return s; }
+  }
+  function nameKey_(jmeno, prijmeni) {
+    return stripDiacritics_((jmeno || '') + ' ' + (prijmeni || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+  // A candidate is treated as "already known" (skip re-queueing it) if either its rodné číslo
+  // matches an existing player/pending row, or its name + birth date do — covers both a
+  // genuine re-registration and the same KIS export file being uploaded twice by mistake.
+  function findExistingMatch_(candidate) {
+    var key = nameKey_(candidate.jmeno, candidate.prijmeni);
+    var rc = candidate.rodneCislo;
+    function matches(p) {
+      if (rc && p.rodneCislo && normalizeDigits_(p.rodneCislo) === rc) return true;
+      return nameKey_(p.jmeno, p.prijmeni) === key && (p.datumNarozeni || '') === candidate.datumNarozeni;
+    }
+    var inRoster = (DATA.players || []).find(matches);
+    if (inRoster) return { where: 'tabulce', player: inRoster };
+    var inPending = (DATA.pending || []).filter(function(p) { return p.stav === 'Čeká'; }).find(matches);
+    if (inPending) return { where: 'čekajících', player: inPending };
+    return null;
+  }
+
   function handleImportFile(e) {
     var file = e.target.files && e.target.files[0];
     if (!file) return;
+    var statusEl = document.getElementById('importPreview');
+    if (statusEl) statusEl.textContent = 'Načítám soubor…';
     var reader = new FileReader();
     reader.onload = function(ev) {
       try {
         var wb = XLSX.read(ev.target.result, { type: 'array', cellDates: true });
         var sheet = wb.Sheets[wb.SheetNames[0]];
         var rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        importCandidates = rows.map(parseKisRow).filter(function(c) { return c.jmeno || c.prijmeni; });
-        renderImportPreview();
-        pushNotification('Soubor "' + file.name + '" načten — nalezeno ' + importCandidates.length + ' záznamů k importu.', 'info');
+        var candidates = rows.map(parseKisRow).filter(function(c) { return c.jmeno || c.prijmeni; });
+        var fresh = [], skipped = [];
+        candidates.forEach(function(c) {
+          var m = findExistingMatch_(c);
+          if (m) skipped.push({ c: c, m: m }); else fresh.push(c);
+        });
+        if (!fresh.length) {
+          if (statusEl) statusEl.textContent = skipped.length ?
+            ('Všech ' + skipped.length + ' záznamů už je v ' + (skipped[0].m.where) + ' — nic nového k přidání.') :
+            'V souboru nebyly nalezeny žádné řádky k importu.';
+          pushNotification('Soubor "' + file.name + '" načten — nic nového (' + skipped.length + ' už bylo dřív).', 'warn');
+          e.target.value = '';
+          return;
+        }
+        var today = formatDateCz_();
+        var rowsToAppend = fresh.map(function(c) {
+          // Leading apostrophe forces plain text — otherwise Sheets auto-detects "D.M.RRRR"
+          // as a date and silently stores a date serial instead of the literal string.
+          return [c.jmeno, c.prijmeni, (c.datumNarozeni ? "'" + c.datumNarozeni : ''), c.rok, (c.rodneCislo ? "'" + c.rodneCislo : ''),
+            c.emailHrac, c.telefonHrac, c.ulice, c.cp, c.mesto, c.psc,
+            c.zastupceJmeno, c.zastupceEmail, c.zastupceTelefon,
+            c.poznamka, c.zdravotniOmezeni, 'Čeká', today, '', file.name];
+        });
+        fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(PENDING_SHEET + '!A1') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: rowsToAppend })
+        }).then(function(r) {
+          if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+          return r.json();
+        }).then(function() {
+          var msg = fresh.length + ' nových záznamů čeká na kontrolu v Nastavení → Noví uživatelé.' +
+            (skipped.length ? (' (' + skipped.length + ' už bylo dřív, přeskočeno.)') : '');
+          if (statusEl) statusEl.textContent = msg;
+          pushNotification('Soubor "' + file.name + '" načten — ' + msg, 'info');
+          e.target.value = '';
+          loadData();
+        }).catch(function(err) {
+          if (statusEl) statusEl.textContent = 'Uložení do fronty selhalo: ' + err.message;
+          pushNotification('Import souboru "' + file.name + '" selhal: ' + err.message, 'error');
+        });
       } catch (err) {
-        var el = document.getElementById('importPreview');
-        if (el) el.innerHTML = '<div class="diff-summary" style="color:var(--red);">Soubor se nepodařilo přečíst: ' + esc(err.message) + '</div>';
+        if (statusEl) statusEl.textContent = 'Soubor se nepodařilo přečíst: ' + err.message;
         pushNotification('Import souboru "' + file.name + '" selhal: ' + err.message, 'error');
       }
     };
@@ -2263,72 +2436,100 @@
     return {
       jmeno: jmeno,
       prijmeni: prijmeni,
-      datumNarozeni: birthDate ? formatCzechDate(birthDate) : (row['Datum narození'] || '').toString(),
+      datumNarozeni: birthDate ? formatBirthDateCz_(birthDate) : (row['Datum narození'] || '').toString(),
       rok: rok,
       categoryPreview: rule ? rule.label : '(nezjištěno — zkontrolujte ročník v tabulce)',
+      rodneCislo: normalizeRodneCisloSheet_(row['Rodné číslo']),
       emailHrac: (row['E-mail'] || '').toString().trim(),
-      telefonHrac: (row['Telefon'] || '').toString().trim(),
+      telefonHrac: normalizePhoneSheet_(row['Telefon']),
       ulice: (row['Ulice'] || '').toString().trim(),
       cp: (row['Číslo popisné'] || '').toString().trim(),
       mesto: (row['Město / obec'] || row['Město'] || '').toString().trim(),
-      psc: (row['PSČ'] || '').toString().trim(),
+      psc: normalizePscSheet_(row['PSČ']),
       zastupceJmeno: (row['Rodič - jméno'] || '').toString().trim(),
       zastupceEmail: (row['Rodič - E-mail'] || row['Rodič - e-mail'] || '').toString().trim(),
-      zastupceTelefon: (row['Rodič - telefon'] || '').toString().trim(),
-      _added: false
+      zastupceTelefon: normalizePhoneSheet_(row['Rodič - telefon']),
+      poznamka: (row['Poznámka'] || '').toString().trim(),
+      zdravotniOmezeni: (row['Zdravotní omezení'] || '').toString().trim()
     };
   }
 
-  function renderImportPreview() {
-    var el = document.getElementById('importPreview');
-    if (!el) return;
-    if (!importCandidates.length) { el.innerHTML = '<div class="loading">V souboru nebyly nalezeny žádné řádky k importu.</div>'; return; }
-    el.innerHTML = '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Nepřenáší se automaticky: ' + KIS_COLUMNS_NOT_TRANSFERRED.join(', ') + ' — doplňte prosím ručně přímo v tabulce, pokud je potřebujete evidovat.</div>' +
-      importCandidates.map(function(c, i) {
-        if (c._added) {
-          return '<div class="diff-summary" style="border-color:var(--green);">✓ ' + esc(c.jmeno + ' ' + c.prijmeni) + ' přidán/a do tabulky.</div>';
-        }
-        return '<div class="diff-summary">' +
-          '<div><b>' + esc(c.jmeno + ' ' + c.prijmeni) + '</b> · narozen ' + esc(c.datumNarozeni) + ' (' + esc(c.categoryPreview) + ')</div>' +
-          '<div>Adresa: ' + esc([c.ulice, c.cp].filter(Boolean).join(' ')) + (c.mesto ? ', ' + esc(c.mesto) : '') + (c.psc ? ' ' + esc(c.psc) : '') + '</div>' +
-          '<div>Hráč: ' + esc(c.telefonHrac || '—') + ' · ' + esc(c.emailHrac || '—') + '</div>' +
-          '<div>Zástupce: ' + esc(c.zastupceJmeno || '—') + ' · ' + esc(c.zastupceTelefon || '—') + ' · ' + esc(c.zastupceEmail || '—') + '</div>' +
-          '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
-            '<button class="icon-btn toolbar-btn" onclick="confirmAddPlayer(' + i + ')">Přidat do tabulky</button>' +
-          '</div>' +
-        '</div>';
-      }).join('');
+  function renderPendingUsersBox_() {
+    var rows = (DATA.pending || []).filter(function(p) { return p.stav === 'Čeká'; });
+    if (!rows.length) {
+      return '<div style="font-size:12px;color:var(--muted);">Žádní čekající noví uživatelé. Nahrajte soubor z KIS výše.</div>';
+    }
+    return rows.map(function(p) {
+      var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+      return '<div class="diff-summary">' +
+        '<div><b>' + esc(p.jmenoCele) + '</b> · narozen ' + esc(p.datumNarozeni) + '</div>' +
+        (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
+        '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
+        '<div>Hráč: ' + esc(formatPhoneForContact_(p.telefonHrac) || p.telefonHrac || '—') + ' · ' + esc(p.emailHrac || '—') + '</div>' +
+        '<div>Zástupce: ' + esc(p.zastupceJmeno || '—') + ' · ' + esc(formatPhoneForContact_(p.zastupceTelefon) || p.zastupceTelefon || '—') + ' · ' + esc(p.zastupceEmail || '—') + '</div>' +
+        (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
+        (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
+        '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
+        '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
+          '<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
+          '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
   }
 
-  function confirmAddPlayer(i) {
-    var c = importCandidates[i];
-    if (!c || !DATA || !DATA.colIndex) return;
-    var maxRow = DATA.players.reduce(function(m, p) { return Math.max(m, p.sheetRow); }, DATA.headerRowIdx + 1);
+  function confirmAddPendingUser(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var hasGuardian = !!(p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon);
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Přidat <b>' + esc(p.jmenoCele) + '</b> do tabulky "Seznam" a vytvořit Google kontakt (skupina "FK Slovany - Hráči")' +
+      (hasGuardian ? ', a kontakt pro zástupce <b>' + esc(p.zastupceJmeno || '') + '</b> (skupina "FK Slovany - Rodiče")' : '') +
+      '?</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyAddPendingUser_(' + sheetRow + ')">Potvrdit</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function applyAddPendingUser_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p || !DATA.colIndex) return;
+    var maxRow = DATA.players.reduce(function(m, x) { return Math.max(m, x.sheetRow); }, DATA.headerRowIdx + 1);
     var targetRow = maxRow + 1;
     var idx = DATA.colIndex;
     var dataArr = [];
-    function put(colKey, value) {
+    function put(colKey, value, forceText) {
       var colIdx = idx[colKey];
       if (colIdx == null || colIdx < 0 || value === '' || value == null) return;
-      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + targetRow, values: [[value]] });
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + targetRow, values: [[forceText ? ("'" + value) : value]] });
     }
-    put('prijmeni', c.prijmeni);
-    put('jmeno', c.jmeno);
-    put('datumNarozeni', c.datumNarozeni);
-    put('rok', c.rok);
-    put('ulice', c.ulice);
-    put('cp', c.cp);
-    put('mesto', c.mesto);
-    put('psc', c.psc);
-    put('emailHrac', c.emailHrac);
-    put('telefonHrac', c.telefonHrac);
-    put('zastupceJmeno', c.zastupceJmeno);
-    put('zastupceTelefon', c.zastupceTelefon);
-    put('zastupceEmail', c.zastupceEmail);
-    put('datumPridani', formatCzechDate(new Date()));
+    put('prijmeni', p.prijmeni);
+    put('jmeno', p.jmeno);
+    // Force text — "D.M.RRRR" would otherwise be auto-detected as a date and stored as a
+    // date serial instead of the literal string every other birth date in the sheet uses.
+    put('datumNarozeni', p.datumNarozeni, true);
+    put('rok', p.rok);
+    put('rodneCislo', p.rodneCislo, true);
+    put('ulice', p.ulice);
+    put('cp', p.cp);
+    put('mesto', p.mesto);
+    put('psc', p.psc);
+    put('emailHrac', p.emailHrac);
+    put('telefonHrac', p.telefonHrac);
+    put('zastupceJmeno', p.zastupceJmeno);
+    put('zastupceTelefon', p.zastupceTelefon);
+    put('zastupceEmail', p.zastupceEmail);
+    put('datumPridani', formatDateCz_());
     var regKisCol = idx.checklistCols && idx.checklistCols['REG KIS'];
     if (regKisCol != null && regKisCol >= 0) {
       dataArr.push({ range: 'Seznam!' + colIndexToLetter(regKisCol) + targetRow, values: [[true]] });
+    }
+    var regKisDateCol = idx.checklistDateCols && idx.checklistDateCols['REG KIS'];
+    if (regKisDateCol != null && regKisDateCol >= 0) {
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(regKisDateCol) + targetRow, values: [[formatDateCz_()]] });
     }
     if (!dataArr.length) return;
 
@@ -2340,12 +2541,139 @@
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     }).then(function() {
-      c._added = true;
-      pushNotification('Hráč ' + c.jmeno + ' ' + c.prijmeni + ' přidán do tabulky (řádek ' + targetRow + '). Zkontrolujte prosím ID a kategorii přímo v tabulce.', 'info');
-      renderImportPreview();
-      loadData(); // refresh the roster so the new player appears in the app too
+      var pIdx = DATA.pendingColIndex;
+      var pdataArr = [{ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.stav) + p.sheetRow, values: [['Přidáno']] }];
+      if (pIdx.datumVyrizeni != null && pIdx.datumVyrizeni >= 0) {
+        pdataArr.push({ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.datumVyrizeni) + p.sheetRow, values: [[formatDateCz_()]] });
+      }
+      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: pdataArr })
+      });
+    }).then(function() {
+      pushNotification('Hráč ' + p.jmenoCele + ' přidán do tabulky (řádek ' + targetRow + '). Zkontrolujte prosím FAČR ID a kategorii přímo v tabulce.', 'info');
+      return createContactsForPendingUser_(p);
+    }).then(function(contactSummary) {
+      if (contactSummary) pushNotification(contactSummary, 'info');
+      loadData();
     }).catch(function(err) {
-      pushNotification('Přidání hráče ' + c.jmeno + ' ' + c.prijmeni + ' selhalo: ' + err.message, 'error');
+      pushNotification('Přidání hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+    });
+  }
+
+  function confirmRejectPendingUser(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Zamítnout záznam <b>' + esc(p.jmenoCele) + '</b>? Nepřidá se do tabulky ani se pro něj nevytvoří kontakty. Řádek zůstane ve "Čekající" pro případnou kontrolu.</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="closeModal();applyRejectPendingUser_(' + sheetRow + ')">Zamítnout</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function applyRejectPendingUser_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p || !DATA.pendingColIndex) return;
+    var pIdx = DATA.pendingColIndex;
+    var pdataArr = [{ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.stav) + p.sheetRow, values: [['Zamítnuto']] }];
+    if (pIdx.datumVyrizeni != null && pIdx.datumVyrizeni >= 0) {
+      pdataArr.push({ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.datumVyrizeni) + p.sheetRow, values: [[formatDateCz_()]] });
+    }
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: pdataArr })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      pushNotification('Záznam ' + p.jmenoCele + ' zamítnut.', 'info');
+      loadData();
+    }).catch(function(err) {
+      pushNotification('Zamítnutí záznamu ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+    });
+  }
+
+  // ---------- Google Contacts (People API) ----------
+  // Contact groups are looked up once per page load and cached in localStorage — creating a
+  // handful of new players a year doesn't need a fresh lookup every time.
+  var CONTACT_GROUP_CACHE_KEY = 'fks_contact_group_ids_v1';
+  var CONTACT_GROUP_NAMES = { hraci: 'FK Slovany - Hráči', rodice: 'FK Slovany - Rodiče' };
+  function loadContactGroupCache_() {
+    try { return JSON.parse(localStorage.getItem(CONTACT_GROUP_CACHE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveContactGroupCache_(map) {
+    try { localStorage.setItem(CONTACT_GROUP_CACHE_KEY, JSON.stringify(map)); } catch (e) {}
+  }
+  function ensureContactGroup_(name) {
+    var cache = loadContactGroupCache_();
+    if (cache[name]) return Promise.resolve(cache[name]);
+    return fetch('https://people.googleapis.com/v1/contactGroups?pageSize=200', {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    }).then(function(r) { return r.json(); }).then(function(j) {
+      var found = (j.contactGroups || []).find(function(g) { return g.name === name || g.formattedName === name; });
+      if (found) { cache[name] = found.resourceName; saveContactGroupCache_(cache); return found.resourceName; }
+      return fetch('https://people.googleapis.com/v1/contactGroups', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactGroup: { name: name } })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+        return r.json();
+      }).then(function(created) {
+        cache[name] = created.resourceName;
+        saveContactGroupCache_(cache);
+        return created.resourceName;
+      });
+    });
+  }
+  function createContact_(fullName, email, phone, groupResourceName) {
+    var spaceIdx = fullName.indexOf(' ');
+    var givenName = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx);
+    var familyName = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1);
+    var body = { names: [{ givenName: givenName, familyName: familyName }] };
+    if (email) body.emailAddresses = [{ value: email }];
+    if (phone) body.phoneNumbers = [{ value: phone }];
+    if (groupResourceName) body.memberships = [{ contactGroupMembership: { contactGroupResourceName: groupResourceName } }];
+    return fetch('https://people.googleapis.com/v1/people:createContact', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    });
+  }
+  // Creates a contact for the player (if a name is present) and, separately, for the
+  // guardian (only if any guardian field was actually filled in) — each into its own group.
+  // Failures here are reported but don't roll back the sheet write, since the player is
+  // already correctly in "Seznam" at that point either way.
+  function createContactsForPendingUser_(p) {
+    var jobs = [];
+    var results = [];
+    if (p.jmenoCele) {
+      jobs.push(
+        ensureContactGroup_(CONTACT_GROUP_NAMES.hraci)
+          .then(function(gid) { return createContact_(p.jmenoCele, p.emailHrac, formatPhoneForContact_(p.telefonHrac), gid); })
+          .then(function() { results.push('hráč'); })
+          .catch(function(err) { results.push('hráč selhal: ' + err.message); })
+      );
+    }
+    if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
+      jobs.push(
+        ensureContactGroup_(CONTACT_GROUP_NAMES.rodice)
+          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid); })
+          .then(function() { results.push('zástupce'); })
+          .catch(function(err) { results.push('zástupce selhal: ' + err.message); })
+      );
+    }
+    if (!jobs.length) return Promise.resolve(null);
+    return Promise.all(jobs).then(function() {
+      return 'Google kontakty: ' + results.join(', ') + '.';
     });
   }
 
