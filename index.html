@@ -22,8 +22,9 @@
     .icon-btn:disabled { opacity: .45; cursor: default; }
     .season { font-size: 11px; color: var(--muted); }
     .cat-list { display: flex; flex-direction: column; gap: 2px; }
-    .sidebar-tools { display: flex; gap: 8px; flex-wrap: wrap; }
-    .sidebar-tools .toolbar-btn { flex: 1 1 calc(50% - 4px); min-width: 90px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .sidebar-tools { display: flex; gap: 6px; }
+    .sidebar-tools .toolbar-btn { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 8px 4px; font-size: 11px; white-space: normal; text-align: center; line-height: 1.15; }
+    .sidebar-tools .toolbar-btn svg { flex-shrink: 0; }
     .notif-panel .notif-row.clickable { cursor: pointer; }
     .notif-panel .notif-row.clickable:hover { background: rgba(0,255,255,0.08); }
     .filter-panel-inner { padding: 10px; display: flex; flex-direction: column; gap: 7px; }
