@@ -6,6 +6,7 @@
   <title>Seznam hráčů – FK Slovany Pardubice</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root { --accent: #00FFFF; --bg: #0b0d10; --card: #1a1e23; --border: #262b31; --text: #eef1f3; --muted: #9aa2ab; --green: #34D399; --red: #f87171; }
     * { box-sizing: border-box; }
@@ -13,13 +14,20 @@
     .app { display: flex; min-height: 100vh; }
     .sidebar { width: 240px; flex-shrink: 0; background: #0e1114; border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 18px; }
     .brand { display: flex; align-items: center; gap: 10px; }
-    .brand .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: #06181a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+    .brand .logo { width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .brand .logo img { width: 100%; height: 100%; object-fit: contain; }
     .brand .name { font-weight: 600; font-size: 14px; }
     .brand .icons { display: flex; gap: 8px; margin-left: auto; }
     .icon-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
     .icon-btn:disabled { opacity: .45; cursor: default; }
     .season { font-size: 11px; color: var(--muted); }
     .cat-list { display: flex; flex-direction: column; gap: 2px; }
+    .sidebar-tools { display: flex; gap: 8px; }
+    .sidebar-tools .toolbar-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .notif-panel .notif-row.clickable { cursor: pointer; }
+    .notif-panel .notif-row.clickable:hover { background: rgba(0,255,255,0.08); }
+    .filter-panel-inner { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .filter-panel-inner input, .filter-panel-inner select { width: 100%; }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; }
     .cat-item.active { background: rgba(0,255,255,0.1); border-color: var(--accent); color: var(--text); }
     .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
@@ -38,9 +46,11 @@
     .player-card { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 16px; cursor: pointer; transition: border-color .15s ease; text-decoration: none; color: inherit; }
     .player-card:hover { border-color: var(--accent); }
     .ring { position: relative; width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; }
-    .ring .ring-hole { position: absolute; inset: 3px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 11px; }
+    .ring .ring-hole { position: absolute; inset: 3px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 11px; overflow: hidden; }
+    .ring .ring-hole img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
     .pc-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .pc-birth { width: 100px; flex-shrink: 0; text-align: center; font-size: 12px; color: var(--muted); }
+    .pc-birth { width: 100px; flex-shrink: 0; text-align: center; font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .pc-birth b { font-weight: 700; color: var(--text); }
     .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
 
     /* Detail view */
@@ -59,13 +69,45 @@
     .info-row span:first-child { color: var(--muted); flex-shrink: 0; }
     .info-row a { color: var(--text); text-decoration: none; }
     .info-row a:hover { color: var(--accent); }
-    .checklist-row { display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px solid #20242a; }
+    .info-box > a:hover { color: var(--accent) !important; text-decoration: underline !important; }
+    .checklist-wrap { display: flex; flex-direction: column; }
+    .checklist-row { display: flex; align-items: center; gap: 10px; padding: 3px 2px; border-bottom: 1px solid #20242a; }
     .checklist-row:last-child { border-bottom: none; }
     .checklist-row .cl-label { flex: 1; font-size: 12px; }
-    .cl-icon { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .cl-icon { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .cl-icon.on { background: rgba(52,211,153,0.15); color: var(--green); }
     .cl-icon.off { background: rgba(248,113,113,0.15); color: var(--red); }
     .phase-note { font-size: 11px; color: #5a6169; padding-top: 4px; }
+
+    /* Copy-to-clipboard icons */
+    .copy-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .copy-btn:hover { color: var(--accent); }
+    .copy-btn.copied { color: var(--green); }
+    .info-value { display: inline-flex; align-items: center; gap: 6px; }
+    .detail-id { font-size: 11px; font-weight: 500; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; margin-left: 8px; vertical-align: middle; }
+
+    /* Notification bell */
+    .notif-panel { display: none; position: absolute; top: 44px; right: 0; width: 300px; max-height: 360px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 6px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .notif-row { display: flex; gap: 8px; padding: 8px 6px; border-bottom: 1px solid #20242a; font-size: 12px; }
+    .notif-row:last-child { border-bottom: none; }
+    .notif-row.unread { background: rgba(0,255,255,0.05); border-radius: 8px; }
+    .notif-icon { flex-shrink: 0; }
+    .notif-time { font-size: 10px; color: var(--muted); }
+    .notif-empty { padding: 16px; text-align: center; color: var(--muted); font-size: 12px; }
+
+    /* Modal (edit form, import preview) */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; }
+    .modal-box h2 { font-size: 16px; margin: 0 0 14px; }
+    .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .form-row label { font-size: 11px; color: var(--muted); }
+    .form-row input, .form-row select { background: #12151a; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .modal-actions button { width: auto; padding: 9px 16px; font-size: 13px; font-family: inherit; }
+    .diff-summary { font-size: 12px; background: #12151a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    .diff-summary div { padding: 2px 0; }
+    .diff-summary b { color: var(--accent); }
     ::-webkit-scrollbar { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
@@ -94,7 +136,8 @@
 
     /* Sign-in screen */
     .signin-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; text-align: center; padding: 20px; }
-    .signin-screen .logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent); color: #06181a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; }
+    .signin-screen .logo { width: 84px; height: 84px; display: flex; align-items: center; justify-content: center; }
+    .signin-screen .logo img { width: 100%; height: 100%; object-fit: contain; }
     .signin-screen h1 { font-size: 18px; margin: 0; }
     .signin-screen p { color: var(--muted); font-size: 13px; max-width: 360px; margin: 0; }
     .gsi-btn-wrap { margin-top: 6px; }
@@ -123,7 +166,7 @@
 <body>
 
   <div id="signinScreen" class="signin-screen">
-    <div class="logo">FKS</div>
+    <div class="logo"><img src="logo.png" alt="FK Slovany Pardubice"></div>
     <h1>Seznam hráčů – FK Slovany Pardubice</h1>
     <p>Pro přístup se přihlaste svým Google účtem, který má sdílený přístup k tabulce Seznam hráčů.</p>
     <div class="gsi-btn-wrap" id="gsiBtnWrap">
@@ -135,7 +178,7 @@
   <div class="app" id="appRoot" style="display:none;">
     <div class="sidebar">
       <div class="brand">
-        <div class="logo">FKS</div><div class="name">Seznam hráčů</div>
+        <div class="logo"><img src="logo.png" alt="FK Slovany Pardubice"></div><div class="name">Seznam hráčů</div>
         <div class="icons">
           <button class="icon-btn" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -143,13 +186,36 @@
           <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
           </button>
-          <button class="icon-btn" type="button" disabled aria-label="Nastavení" title="Nastavení — připravujeme">
+          <div style="position:relative;">
+            <button class="icon-btn" type="button" onclick="toggleNotifications()" aria-label="Notifikace" title="Notifikace">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              <span id="notifBadge" style="display:none;position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--red);"></span>
+            </button>
+            <div id="notifPanel" class="notif-panel"></div>
+          </div>
+          <button class="icon-btn" type="button" onclick="openSettings()" aria-label="Nastavení" title="Nastavení">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
         </div>
       </div>
       <div class="season" id="season">Načítám…</div>
       <div class="cat-list" id="catList"></div>
+      <div class="sidebar-tools">
+        <div style="position:relative;">
+          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('share')" aria-label="Sdílet" title="Sdílet">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            Sdílet
+          </button>
+          <div id="sharePanel" class="notif-panel" style="width:230px;"></div>
+        </div>
+        <div style="position:relative;">
+          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('filter')" aria-label="Filtr" title="Filtr">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filtr
+          </button>
+          <div id="filterPanel" class="notif-panel" style="width:230px;"></div>
+        </div>
+      </div>
       <div class="role-badge" id="roleBadge"></div>
     </div>
     <div class="main" id="main">
@@ -158,14 +224,28 @@
   </div>
 
   <div id="printArea"></div>
+  <div id="modalOverlay" class="modal-overlay"><div class="modal-box" id="modalBox"></div></div>
 
 <script>
   // ---------- Config ----------
   var CLIENT_ID = '263192844228-8e8inbfjl1shvsiont4jhmme8c53l6ef.apps.googleusercontent.com';
   var SPREADSHEET_ID = '1U9sNUiZj63o027eDi64bc02GsCR6gDx8yCgfADM-rvc';
-  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/userinfo.email';
+  // Full (not read-only) Sheets scope — needed for the in-app editing feature, which
+  // writes changed cells straight back to the same "Seznam hráčů" spreadsheet.
+  // drive.readonly is needed to list/show player photos from the "Fotky hráčů" folder.
+  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email';
+  // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
+  // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
+  // For Radek (fkslovany@gmail.com, viewer role) to see photos too, this folder needs to
+  // be shared with his account (view access) — same as the spreadsheet already is.
+  var PHOTOS_FOLDER_ID = '180Z6_Vuk8F2t1ktlmr0kQAtxAs_SIGMT';
   var ADMIN_EMAILS = ['hoseck.petr@gmail.com'];
   var VIEWER_EMAILS = ['fkslovany@gmail.com'];
+  // Display-only renames — the underlying category label (used for year-range matching
+  // and as the value stored/filtered on) stays whatever the "Kategorie" sheet says;
+  // only what's shown in the UI changes.
+  var CATEGORY_LABEL_DISPLAY = { 'Mini': 'U7', 'Minipřípravka': 'U7' };
+  function displayCategoryLabel(label) { return CATEGORY_LABEL_DISPLAY[label] || label; }
   var CHECKLIST_KEYS = ['REG KIS','KONTAKTY','EMAIL','WHATSAPP','KIS SOUP','CASH KIS','REG FAČR','CASH FAČR','ČL KLUBU','HR KLUBU','FOTO PC','FOTO FAČR','SOUHL KIS','PL. JARO'];
   var CATEGORY_COLORS = {
     'Muži': '#94A3B8', 'U19': '#FB7185', 'U17': '#FB923C', 'U15': '#A78BFA',
@@ -191,6 +271,8 @@
     var el = document.getElementById('main');
     if (el) { el.innerHTML = '<div class="loading">Chyba skriptu: ' + String(msg) + ' (řádek ' + line + ')</div>'; }
   };
+
+  loadNotifications();
 
   // ---------- Google Identity Services sign-in ----------
   function gisReady() { return window.google && google.accounts && google.accounts.oauth2; }
@@ -274,6 +356,202 @@
     return (idx >= 0 && row[idx] !== undefined) ? row[idx] : '';
   }
 
+  // 0-based column index -> A1 letter (0 -> A, 25 -> Z, 26 -> AA, ...) — used to build
+  // write ranges for the in-app editing feature.
+  function colIndexToLetter(idx0) {
+    var s = '', n = idx0 + 1;
+    while (n > 0) {
+      var rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  // Safely embeds a string inside a single-quoted inline-JS attribute (onclick="...").
+  function jsStr(s) {
+    return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+  }
+
+  // ---------- Copy-to-clipboard ----------
+  function copyBtnHtml(text) {
+    if (!text) return '';
+    return '<button type="button" class="copy-btn" onclick="event.stopPropagation(); copyText(this, \'' + jsStr(text) + '\')" title="Kopírovat" aria-label="Kopírovat">' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+    '</button>';
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  function copyText(btn, text) {
+    function done() {
+      var original = btn.innerHTML;
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.innerHTML = original; btn.classList.remove('copied'); }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text); done();
+    }
+  }
+
+  // ---------- Player photos (Google Drive "Fotky hráčů" folder) ----------
+  var photoIndex = null;
+  function normalizePhotoKey(s) {
+    return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+  function loadPlayerPhotos() {
+    var base = 'https://www.googleapis.com/drive/v3/files?q=' +
+      encodeURIComponent("'" + PHOTOS_FOLDER_ID + "' in parents and trashed = false") +
+      '&fields=' + encodeURIComponent('nextPageToken,files(id,name,thumbnailLink)') + '&pageSize=1000';
+    function fetchPage(pageToken, acc) {
+      var url = base + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+      return fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } })
+        .then(function(r) { return r.json(); })
+        .then(function(json) {
+          acc = acc.concat(json.files || []);
+          if (json.nextPageToken) return fetchPage(json.nextPageToken, acc);
+          return acc;
+        });
+    }
+    return fetchPage(null, []).then(function(files) {
+      var idx = {};
+      files.forEach(function(f) {
+        var nameNoExt = f.name.replace(/\.[^.]+$/, '');
+        idx[normalizePhotoKey(nameNoExt)] = f;
+      });
+      photoIndex = idx;
+      if (DATA && DATA.players) {
+        var matched = 0;
+        DATA.players.forEach(function(p) {
+          var f = idx[normalizePhotoKey(p.prijmeni + ' ' + p.jmeno)];
+          if (f) { p.photoId = f.id; p.photoThumb = f.thumbnailLink; matched++; }
+        });
+        render(); // patch photos into whatever view is currently showing
+        if (matched === 0) pushNotification('Ve složce Fotky hráčů se nenašla žádná fotka odpovídající jménu hráče.', 'warn');
+      }
+    }).catch(function() {
+      // Photos are a nice-to-have enhancement — never let a Drive hiccup break the roster view.
+      pushNotification('Fotky hráčů se nepodařilo načíst z Disku (zkontrolujte sdílení složky).', 'error');
+    });
+  }
+  function photoUrl(p, size) {
+    if (!p || !p.photoThumb) return null;
+    return /=s\d+$/.test(p.photoThumb) ? p.photoThumb.replace(/=s\d+$/, '=s' + size) : p.photoThumb;
+  }
+  function avatarInnerHtml(p, size) {
+    if (p.photoThumb) {
+      return '<img src="' + esc(photoUrl(p, size)) + '" alt="" onerror="this.outerHTML=\'' + jsStr(esc(initials(p.jmenoCele))) + '\';">';
+    }
+    return esc(initials(p.jmenoCele));
+  }
+
+  // ---------- Notification center (bell icon) ----------
+  var notifications = [];
+  var notifPanelOpen = false;
+  function loadNotifications() {
+    try { notifications = JSON.parse(localStorage.getItem('fks_notifications') || '[]'); } catch (e) { notifications = []; }
+  }
+  function saveNotifications() {
+    try { localStorage.setItem('fks_notifications', JSON.stringify(notifications.slice(0, 40))); } catch (e) {}
+  }
+  function pushNotification(text, type) {
+    notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2, 7), text: text, type: type || 'info', ts: new Date().toISOString(), read: false });
+    saveNotifications();
+    renderBell();
+  }
+  function unreadNotifCount() {
+    return notifications.filter(function(n) { return !n.read; }).length;
+  }
+  function formatNotifTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('cs-CZ') + ' ' + d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+  }
+  function notifIconFor(type) {
+    if (type === 'error') return '<span style="color:var(--red);">&#9888;</span>';
+    if (type === 'warn') return '<span style="color:#FBBF24;">&#9888;</span>';
+    return '<span style="color:var(--green);">&#10003;</span>';
+  }
+  function renderBell() {
+    var badge = document.getElementById('notifBadge');
+    if (badge) badge.style.display = unreadNotifCount() > 0 ? 'block' : 'none';
+    var panel = document.getElementById('notifPanel');
+    if (panel && notifPanelOpen) panel.innerHTML = notifPanelHtml();
+  }
+  function notifPanelHtml() {
+    if (!notifications.length) return '<div class="notif-empty">Zatím žádné notifikace.</div>';
+    return notifications.slice(0, 20).map(function(n) {
+      return '<div class="notif-row' + (n.read ? '' : ' unread') + '">' +
+        '<span class="notif-icon">' + notifIconFor(n.type) + '</span>' +
+        '<span class="notif-text">' + esc(n.text) + '<br><span class="notif-time">' + formatNotifTime(n.ts) + '</span></span>' +
+      '</div>';
+    }).join('');
+  }
+  // ---------- Sidebar Sdílet / Filtr dropdown panels ----------
+  function toggleSidebarPanel(which) {
+    var ids = { share: 'sharePanel', filter: 'filterPanel' };
+    Object.keys(ids).forEach(function(key) {
+      var el = document.getElementById(ids[key]);
+      if (!el) return;
+      if (key === which) {
+        var isOpen = el.style.display === 'block';
+        el.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen && key === 'filter') renderFilterPanel();
+        if (!isOpen && key === 'share') renderSharePanel();
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }
+  function shareCurrentCategoryPDF() {
+    selectAllFiltered();
+    sharePlayersPDF();
+  }
+  function renderSharePanel() {
+    var el = document.getElementById('sharePanel');
+    if (!el || !DATA) return;
+    el.innerHTML =
+      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); toggleSelectMode();"><span class="notif-text">Vybrat hráče a sdílet jako PDF</span></div>' +
+      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); shareCurrentCategoryPDF();"><span class="notif-text">Sdílet aktuální výběr kategorie/filtru jako PDF (' + filteredPlayers().length + ')</span></div>';
+  }
+  function renderFilterPanel() {
+    var el = document.getElementById('filterPanel');
+    if (!el || !DATA) return;
+    el.innerHTML = '<div class="filter-panel-inner">' +
+        '<input type="search" id="sidebarSearch" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
+        '<select id="sidebarRok"></select>' +
+        '<select id="sidebarCity"></select>' +
+      '</div>';
+    var roky = Array.from(new Set(DATA.players.map(function(p) { return String(p.rok); }))).filter(Boolean).sort();
+    fillSelect('sidebarRok', roky, state.rok);
+    fillSelect('sidebarCity', DATA.cities, state.city);
+    document.getElementById('sidebarSearch').addEventListener('input', function(e) { state.q = e.target.value; render(); });
+    document.getElementById('sidebarRok').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
+    document.getElementById('sidebarCity').addEventListener('change', function(e) { state.city = e.target.value; render(); });
+  }
+
+  function toggleNotifications() {
+    notifPanelOpen = !notifPanelOpen;
+    var panel = document.getElementById('notifPanel');
+    if (!panel) return;
+    if (notifPanelOpen) {
+      panel.style.display = 'block';
+      panel.innerHTML = notifPanelHtml();
+      notifications.forEach(function(n) { n.read = true; });
+      saveNotifications();
+      renderBell();
+    } else {
+      panel.style.display = 'none';
+    }
+  }
+
   // Finds a header column whose (trimmed) text CONTAINS substr — used for the
   // "Zákonný zástupce" header, which in the real sheet is not an exact match
   // (it's appended to a long note in the same cell), so an exact-key lookup
@@ -317,7 +595,12 @@
       id: col_(map, 'ID'),
       zastupceJmeno: zastupceJmenoIdx,
       zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
-      zastupceEmail: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 2 : -1
+      zastupceEmail: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 2 : -1,
+      checklistCols: (function() {
+        var m = {};
+        CHECKLIST_KEYS.forEach(function(key) { m[key] = col_(map, key); });
+        return m;
+      })()
     };
 
     var players = [];
@@ -357,7 +640,7 @@
         checklist: checklist
       });
     }
-    return players;
+    return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
   }
 
   function parseCategoryRules_(values) {
@@ -444,7 +727,8 @@
           var seznamValues = (json.valueRanges[0] && json.valueRanges[0].values) || [];
           var kategorieValues = (json.valueRanges[1] && json.valueRanges[1].values) || [];
 
-          var players = parseRoster_(seznamValues, 'Seznam');
+          var parsed = parseRoster_(seznamValues, 'Seznam');
+          var players = parsed.players;
           var rules = parseCategoryRules_(kategorieValues);
           var rulesWithColor = rules.map(function (r) {
             return { id: r.id, label: r.label, from: r.from, to: r.to, color: colorForLabel_(r.label) };
@@ -464,13 +748,16 @@
             categoryRules: rulesWithColor,
             cities: Object.keys(cities).sort(),
             season: 'Seznam hráčů 26/27',
-            role: role
+            role: role,
+            colIndex: parsed.colIndex,
+            headerRowIdx: parsed.headerRowIdx
           };
 
           document.getElementById('season').textContent = DATA.season;
           document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()">Odhlásit</button>';
           renderCatList();
           render();
+          loadPlayerPhotos();
         });
     }).catch(function(err) {
       clearTimeout(slowTimer);
@@ -519,6 +806,11 @@
 
   function openMap() {
     state.view = 'map';
+    render();
+  }
+
+  function openSettings() {
+    state.view = 'settings';
     render();
   }
 
@@ -591,6 +883,101 @@
       '<table><thead><tr><th>Položka</th><th>Splněno</th></tr></thead><tbody>' + checklistRows + '</tbody></table>';
     document.getElementById('printArea').innerHTML = html;
     window.print();
+  }
+
+  // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
+  var EDIT_FIELDS = ['telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'ulice', 'cp', 'mesto', 'psc'];
+  var EDIT_FIELD_LABELS = { telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
+
+  function openEditModal(sheetRow) {
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    document.getElementById('modalBox').innerHTML = editFormHtml(p);
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    document.getElementById('modalBox').innerHTML = '';
+  }
+  function editFormHtml(p) {
+    function field(id, label, value) {
+      return '<div class="form-row"><label for="ef_' + id + '">' + esc(label) + '</label><input id="ef_' + id + '" type="text" value="' + esc(value || '') + '"></div>';
+    }
+    return '<h2>Upravit údaje — ' + esc(p.jmenoCele) + '</h2>' +
+      field('telefonHrac', EDIT_FIELD_LABELS.telefonHrac, p.telefonHrac) +
+      field('emailHrac', EDIT_FIELD_LABELS.emailHrac, p.emailHrac) +
+      field('zastupceJmeno', EDIT_FIELD_LABELS.zastupceJmeno, p.zastupceJmeno) +
+      field('zastupceTelefon', EDIT_FIELD_LABELS.zastupceTelefon, p.zastupceTelefon) +
+      field('zastupceEmail', EDIT_FIELD_LABELS.zastupceEmail, p.zastupceEmail) +
+      field('ulice', EDIT_FIELD_LABELS.ulice, p.ulice) +
+      field('cp', EDIT_FIELD_LABELS.cp, p.cp) +
+      field('mesto', EDIT_FIELD_LABELS.mesto, p.mesto) +
+      field('psc', EDIT_FIELD_LABELS.psc, p.psc) +
+      '<div id="editDiffArea"></div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="reviewEdits(' + p.sheetRow + ')">Zkontrolovat a uložit</button>' +
+      '</div>';
+  }
+  function reviewEdits(sheetRow) {
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var changes = {};
+    EDIT_FIELDS.forEach(function(key) {
+      var el = document.getElementById('ef_' + key);
+      if (!el) return;
+      var newVal = el.value.trim();
+      var oldVal = (p[key] || '').toString();
+      if (newVal !== oldVal) changes[key] = newVal;
+    });
+    var keys = Object.keys(changes);
+    var area = document.getElementById('editDiffArea');
+    if (!keys.length) {
+      area.innerHTML = '<div class="diff-summary">Žádné změny k uložení.</div>';
+      return;
+    }
+    area.innerHTML = '<div class="diff-summary"><b>Zkontrolujte změny:</b>' +
+      keys.map(function(k) {
+        return '<div>' + esc(EDIT_FIELD_LABELS[k] || k) + ': "' + esc(p[k] || '—') + '" → "' + esc(changes[k] || '—') + '"</div>';
+      }).join('') + '</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" id="confirmSaveBtn" style="background:var(--accent);color:#06181a;border-color:var(--accent);">Potvrdit a uložit</button>' +
+      '</div>';
+    document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
+  }
+  function saveEditsToSheet(sheetRow, changes) {
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    var area = document.getElementById('editDiffArea');
+    if (!p || !DATA.colIndex) { area.innerHTML = '<div class="diff-summary">Chyba: chybí informace o sloupcích.</div>'; return; }
+    area.innerHTML = '<div class="diff-summary">Ukládám…</div>';
+    var dataArr = [];
+    Object.keys(changes).forEach(function(key) {
+      var colIdx = DATA.colIndex[key];
+      if (colIdx == null || colIdx < 0) return;
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[changes[key]]] });
+    });
+    if (!dataArr.length) {
+      area.innerHTML = '<div class="diff-summary">Tyto položky appka zatím neumí uložit (sloupec v tabulce nenalezen).</div>';
+      return;
+    }
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: dataArr })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      Object.keys(changes).forEach(function(key) { p[key] = changes[key]; });
+      pushNotification('Uloženy změny u hráče ' + p.jmenoCele + '.', 'info');
+      closeModal();
+      render();
+    }).catch(function(err) {
+      area.innerHTML = '<div class="diff-summary" style="color:var(--red);">Uložení selhalo: ' + esc(err.message) + '</div>' +
+        '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
+      pushNotification('Uložení změn u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+    });
   }
 
   // ---------- Mapa hráčů (Google Maps JavaScript API + Geocoding API, addresses geocoded client-side) ----------
@@ -668,54 +1055,245 @@
     var done = 0, shown = 0;
     var bounds = new google.maps.LatLngBounds();
     var hasBounds = false;
-    function step(i) {
+
+    function placeMarker(p, loc) {
+      var pos = { lat: loc.lat, lng: loc.lon };
+      var marker = new google.maps.Marker({
+        position: pos,
+        map: mapInstance,
+        title: p.jmenoCele,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: p.categoryColor,
+          fillOpacity: 0.85,
+          strokeColor: p.categoryColor,
+          strokeWeight: 2
+        }
+      });
+      var info = new google.maps.InfoWindow({
+        content: '<div style="font-family:\'Poppins\',sans-serif;font-size:12px;color:#1a1e23;"><b style="font-size:13px;">' + esc(p.jmenoCele) + '</b><br>' + esc(p.categoryGroup) + (p.mesto ? ' · ' + esc(p.mesto) : '') + '</div>'
+      });
+      marker.addListener('click', function() { info.open({ anchor: marker, map: mapInstance }); });
+      markersLayer.push(marker);
+      bounds.extend(pos);
+      hasBounds = true;
+      shown++;
+    }
+
+    if (!players.length) {
+      if (statusEl) statusEl.textContent = '0 z 0 hráčů zobrazeno na mapě (podle adresy).';
+      return;
+    }
+
+    // Geocode with a limited concurrency pool instead of one-at-a-time — cached
+    // addresses resolve instantly anyway, and Google's client-side Geocoder
+    // comfortably handles several in flight at once, so a full 150-player roster
+    // no longer takes a minute+ to plot on every uncached load.
+    var CONCURRENCY = 6;
+    var nextIndex = 0;
+
+    function worker() {
       if (myToken !== mapLoadToken) return; // a newer map load superseded this one
+      var i = nextIndex++;
       if (i >= players.length) {
-        if (statusEl) statusEl.textContent = shown + ' z ' + players.length + ' hráčů zobrazeno na mapě (podle adresy).';
-        if (hasBounds) mapInstance.fitBounds(bounds, 30);
+        if (done >= players.length && statusEl) {
+          statusEl.textContent = shown + ' z ' + players.length + ' hráčů zobrazeno na mapě (podle adresy).';
+          if (hasBounds) mapInstance.fitBounds(bounds, 30);
+        }
         return;
       }
       var p = players[i];
       var addr = addressKey(p);
-      if (!addr) { done++; return step(i + 1); }
-      var wasCached = Object.prototype.hasOwnProperty.call(geocodeCache, addr);
+      if (!addr) {
+        done++;
+        if (statusEl) statusEl.textContent = 'Načítám polohy hráčů… ' + done + '/' + players.length;
+        worker();
+        return;
+      }
       geocodeAddress(addr).then(function(loc) {
         if (myToken !== mapLoadToken) return;
         done++;
         if (statusEl) statusEl.textContent = 'Načítám polohy hráčů… ' + done + '/' + players.length;
-        if (loc) {
-          var pos = { lat: loc.lat, lng: loc.lon };
-          var marker = new google.maps.Marker({
-            position: pos,
-            map: mapInstance,
-            title: p.jmenoCele,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 7,
-              fillColor: p.categoryColor,
-              fillOpacity: 0.85,
-              strokeColor: p.categoryColor,
-              strokeWeight: 2
-            }
-          });
-          var info = new google.maps.InfoWindow({
-            content: '<div style="font-family:\'Poppins\',sans-serif;font-size:12px;color:#1a1e23;"><b style="font-size:13px;">' + esc(p.jmenoCele) + '</b><br>' + esc(p.categoryGroup) + (p.mesto ? ' · ' + esc(p.mesto) : '') + '</div>'
-          });
-          marker.addListener('click', function() { info.open({ anchor: marker, map: mapInstance }); });
-          markersLayer.push(marker);
-          bounds.extend(pos);
-          hasBounds = true;
-          shown++;
+        if (loc) placeMarker(p, loc);
+        if (done >= players.length) {
+          statusEl.textContent = shown + ' z ' + players.length + ' hráčů zobrazeno na mapě (podle adresy).';
+          if (hasBounds) mapInstance.fitBounds(bounds, 30);
         }
-        if (wasCached) step(i + 1); else setTimeout(function() { step(i + 1); }, 200);
+        worker();
       });
     }
-    step(0);
+
+    for (var w = 0; w < Math.min(CONCURRENCY, players.length); w++) worker();
   }
   function renderMapView() {
     return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám mapu…</div></div>' +
       '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.category === 'Vše' ? 'všechny kategorie' : state.category) + '). Polohy jsou přibližné odhady podle adresy, zdroj: Google Maps.</div>' +
       '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
+  }
+
+  // ---------- Nastavení (přehled kategorií/checklistu, import nových hráčů z KIS) ----------
+  var importCandidates = [];
+  var KIS_COLUMNS_NOT_TRANSFERRED = ['Rodné číslo', 'Číslo orientační', 'Země', 'Poznámka', 'Zdravotní omezení'];
+
+  function formatCzechDate(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
+  }
+
+  function renderSettingsView() {
+    if (!DATA || DATA.role !== 'admin') {
+      return '<div class="header"><h1>Nastavení</h1></div><div class="loading">Nastavení jsou dostupná pouze pro správce účtu.</div>';
+    }
+    var catRows = (DATA.categoryRules || []).map(function(r) {
+      return '<div class="info-row"><span>' + esc(displayCategoryLabel(r.label)) + '</span><span>' + (r.from != null ? r.from : '–') + ' – ' + (r.to != null ? r.to : '–') + '</span></div>';
+    }).join('') || '<div class="loading">Žádné kategorie nenalezeny.</div>';
+
+    var checklistRows = CHECKLIST_KEYS.map(function(key) {
+      return '<div class="info-row"><span>' + esc(CHECKLIST_LABELS[key] || key) + '</span><span style="color:var(--muted);font-size:11px;">' + esc(key) + '</span></div>';
+    }).join('');
+
+    return '<div class="header"><h1>Nastavení</h1></div>' +
+      '<div class="detail-grid">' +
+        '<div class="info-box">' +
+          '<span class="box-title">Kategorie (ročníky)</span>' +
+          catRows +
+          '<span class="phase-note">Úprava kategorií/ročníků přímo v appce bude v další verzi — zatím se upravují na listu "Kategorie" v tabulce.</span>' +
+        '</div>' +
+        '<div class="info-box">' +
+          '<span class="box-title">Položky checklistu</span>' +
+          checklistRows +
+          '<span class="phase-note">Úprava/přidání položek checklistu přímo v appce bude v další verzi.</span>' +
+        '</div>' +
+        '<div class="info-box" style="min-width:100%;">' +
+          '<span class="box-title">Import nových hráčů z KIS (XLS export)</span>' +
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Jméno, příjmení, datum narození, adresa, kontakty hráče i rodiče se přenesou automaticky; nový hráč dostane v checklistu zaškrtnutou jen položku "Registrace KIS".</div>' +
+          '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
+          '<div id="importPreview" style="margin-top:14px;"></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function wireSettingsView() {
+    var fileInput = document.getElementById('importFileInput');
+    if (fileInput) fileInput.addEventListener('change', handleImportFile);
+  }
+
+  function handleImportFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var wb = XLSX.read(ev.target.result, { type: 'array', cellDates: true });
+        var sheet = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        importCandidates = rows.map(parseKisRow).filter(function(c) { return c.jmeno || c.prijmeni; });
+        renderImportPreview();
+        pushNotification('Soubor "' + file.name + '" načten — nalezeno ' + importCandidates.length + ' záznamů k importu.', 'info');
+      } catch (err) {
+        var el = document.getElementById('importPreview');
+        if (el) el.innerHTML = '<div class="diff-summary" style="color:var(--red);">Soubor se nepodařilo přečíst: ' + esc(err.message) + '</div>';
+        pushNotification('Import souboru "' + file.name + '" selhal: ' + err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseKisRow(row) {
+    var jmeno = (row['Jméno'] || '').toString().trim();
+    var prijmeni = (row['Příjmení'] || '').toString().trim();
+    var birth = row['Datum narození'];
+    var birthDate = (birth instanceof Date) ? birth : null;
+    var rok = birthDate ? birthDate.getFullYear() : '';
+    var rule = (birthDate && DATA && DATA.categoryRules) ? matchCategoryRule_(rok, DATA.categoryRules) : null;
+    return {
+      jmeno: jmeno,
+      prijmeni: prijmeni,
+      datumNarozeni: birthDate ? formatCzechDate(birthDate) : (row['Datum narození'] || '').toString(),
+      rok: rok,
+      categoryPreview: rule ? rule.label : '(nezjištěno — zkontrolujte ročník v tabulce)',
+      emailHrac: (row['E-mail'] || '').toString().trim(),
+      telefonHrac: (row['Telefon'] || '').toString().trim(),
+      ulice: (row['Ulice'] || '').toString().trim(),
+      cp: (row['Číslo popisné'] || '').toString().trim(),
+      mesto: (row['Město / obec'] || row['Město'] || '').toString().trim(),
+      psc: (row['PSČ'] || '').toString().trim(),
+      zastupceJmeno: (row['Rodič - jméno'] || '').toString().trim(),
+      zastupceEmail: (row['Rodič - E-mail'] || row['Rodič - e-mail'] || '').toString().trim(),
+      zastupceTelefon: (row['Rodič - telefon'] || '').toString().trim(),
+      _added: false
+    };
+  }
+
+  function renderImportPreview() {
+    var el = document.getElementById('importPreview');
+    if (!el) return;
+    if (!importCandidates.length) { el.innerHTML = '<div class="loading">V souboru nebyly nalezeny žádné řádky k importu.</div>'; return; }
+    el.innerHTML = '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Nepřenáší se automaticky: ' + KIS_COLUMNS_NOT_TRANSFERRED.join(', ') + ' — doplňte prosím ručně přímo v tabulce, pokud je potřebujete evidovat.</div>' +
+      importCandidates.map(function(c, i) {
+        if (c._added) {
+          return '<div class="diff-summary" style="border-color:var(--green);">✓ ' + esc(c.jmeno + ' ' + c.prijmeni) + ' přidán/a do tabulky.</div>';
+        }
+        return '<div class="diff-summary">' +
+          '<div><b>' + esc(c.jmeno + ' ' + c.prijmeni) + '</b> · narozen ' + esc(c.datumNarozeni) + ' (' + esc(c.categoryPreview) + ')</div>' +
+          '<div>Adresa: ' + esc([c.ulice, c.cp].filter(Boolean).join(' ')) + (c.mesto ? ', ' + esc(c.mesto) : '') + (c.psc ? ' ' + esc(c.psc) : '') + '</div>' +
+          '<div>Hráč: ' + esc(c.telefonHrac || '—') + ' · ' + esc(c.emailHrac || '—') + '</div>' +
+          '<div>Zástupce: ' + esc(c.zastupceJmeno || '—') + ' · ' + esc(c.zastupceTelefon || '—') + ' · ' + esc(c.zastupceEmail || '—') + '</div>' +
+          '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
+            '<button class="icon-btn toolbar-btn" onclick="confirmAddPlayer(' + i + ')">Přidat do tabulky</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+  }
+
+  function confirmAddPlayer(i) {
+    var c = importCandidates[i];
+    if (!c || !DATA || !DATA.colIndex) return;
+    var maxRow = DATA.players.reduce(function(m, p) { return Math.max(m, p.sheetRow); }, DATA.headerRowIdx + 1);
+    var targetRow = maxRow + 1;
+    var idx = DATA.colIndex;
+    var dataArr = [];
+    function put(colKey, value) {
+      var colIdx = idx[colKey];
+      if (colIdx == null || colIdx < 0 || value === '' || value == null) return;
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + targetRow, values: [[value]] });
+    }
+    put('prijmeni', c.prijmeni);
+    put('jmeno', c.jmeno);
+    put('datumNarozeni', c.datumNarozeni);
+    put('rok', c.rok);
+    put('ulice', c.ulice);
+    put('cp', c.cp);
+    put('mesto', c.mesto);
+    put('psc', c.psc);
+    put('emailHrac', c.emailHrac);
+    put('telefonHrac', c.telefonHrac);
+    put('zastupceJmeno', c.zastupceJmeno);
+    put('zastupceTelefon', c.zastupceTelefon);
+    put('zastupceEmail', c.zastupceEmail);
+    put('datumPridani', formatCzechDate(new Date()));
+    var regKisCol = idx.checklistCols && idx.checklistCols['REG KIS'];
+    if (regKisCol != null && regKisCol >= 0) {
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(regKisCol) + targetRow, values: [[true]] });
+    }
+    if (!dataArr.length) return;
+
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: dataArr })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      c._added = true;
+      pushNotification('Hráč ' + c.jmeno + ' ' + c.prijmeni + ' přidán do tabulky (řádek ' + targetRow + '). Zkontrolujte prosím ID a kategorii přímo v tabulce.', 'info');
+      renderImportPreview();
+      loadData(); // refresh the roster so the new player appears in the app too
+    }).catch(function(err) {
+      pushNotification('Přidání hráče ' + c.jmeno + ' ' + c.prijmeni + ' selhalo: ' + err.message, 'error');
+    });
   }
 
   function renderListView() {
@@ -729,10 +1307,10 @@
       var clickAction = state.selectMode ? 'toggleSelect(' + p.sheetRow + ')' : 'openDetail(' + p.sheetRow + ')';
       return '<div class="player-card" onclick="' + clickAction + '">' +
         checkboxHtml +
-        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + esc(initials(p.jmenoCele)) + '</div></div>' +
+        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
         '<span class="pc-name">' + esc(p.jmenoCele) + '</span>' +
-        '<span class="pc-birth">' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</span>' +
-        '<span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(p.categoryGroup) + '</span>' +
+        '<span class="pc-birth">' + esc(p.datumNarozeni) + (p.vek ? '<br><b>' + esc(p.vek) + ' let</b>' : '') + '</span>' +
+        '<span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' +
       '</div>';
     }).join('');
 
@@ -743,18 +1321,10 @@
         '<button class="icon-btn toolbar-btn" onclick="sharePlayersPDF()"' + (selCount ? '' : ' disabled') + '>Sdílet jako PDF</button>' +
         '<span class="sel-count">Vybráno: ' + selCount + '</span>' +
         '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()" style="margin-left:auto;">Hotovo</button>' +
-      '</div>') :
-      ('<div class="filters" style="align-items:center;">' +
-        '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()">Vybrat hráče a sdílet jako PDF</button>' +
-      '</div>');
+      '</div>') : '';
 
     return '<div class="header"><h1>Aktivní hráči</h1><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
       toolbar +
-      '<div class="filters">' +
-        '<input type="search" id="search" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
-        '<select id="rokFilter"></select>' +
-        '<select id="cityFilter"></select>' +
-      '</div>' +
       '<div class="player-list">' + (rows || '<div class="loading">Žádní hráči neodpovídají filtru.</div>') + '</div>';
   }
 
@@ -774,38 +1344,49 @@
     }).join('');
 
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+    var mapsHref = addressLine ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addressLine + ', Česká republika') : null;
+    var isAdmin = DATA.role === 'admin';
+
+    function contactRow(label, value, isPhone) {
+      var link = value ? ('<a href="' + (isPhone ? 'tel:' : 'mailto:') + esc(value) + '">' + esc(value) + '</a>') : '—';
+      return '<div class="info-row"><span>' + esc(label) + '</span><span class="info-value">' + link + (value ? copyBtnHtml(value) : '') + '</span></div>';
+    }
 
     return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">' +
         '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
-        '<button class="icon-btn toolbar-btn" onclick="sharePlayerCardPDF()">Sdílet kartu (PDF)</button>' +
+        '<div style="display:flex;gap:8px;">' +
+          (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
+          '<button class="icon-btn toolbar-btn" onclick="sharePlayerCardPDF()">Sdílet kartu (PDF)</button>' +
+        '</div>' +
       '</div>' +
       '<div class="detail-head">' +
-        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + esc(initials(p.jmenoCele)) + '</div></div>' +
+        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 160) + '</div></div>' +
         '<div>' +
-          '<div class="detail-name">' + esc(p.jmenoCele) + '</div>' +
-          '<div class="detail-sub"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(p.categoryGroup) + ' · ' + esc(p.kategorie) + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</div>' +
+          '<div class="detail-name">' + esc(p.jmenoCele) + (p.id ? '<span class="detail-id">ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') + '</div>' +
+          '<div class="detail-sub"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + ' · ' + esc(p.kategorie) + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</div>' +
           '<div class="detail-progress">' + c.done + '/' + c.total + ' kroků hotovo</div>' +
         '</div>' +
       '</div>' +
       '<div class="detail-grid">' +
         '<div class="info-box">' +
-          '<span class="box-title">Kontaktní údaje</span>' +
-          '<div class="info-row"><span>ID hráče</span><span>' + (esc(p.id) || '—') + '</span></div>' +
-          '<div class="info-row"><span>Telefon hráče</span>' + (p.telefonHrac ? '<a href="tel:' + esc(p.telefonHrac) + '">' + esc(p.telefonHrac) + '</a>' : '<span>—</span>') + '</div>' +
-          '<div class="info-row"><span>E-mail hráče</span>' + (p.emailHrac ? '<a href="mailto:' + esc(p.emailHrac) + '">' + esc(p.emailHrac) + '</a>' : '<span>—</span>') + '</div>' +
-          '<div class="info-row"><span>Zákonný zástupce</span><span>' + (esc(p.zastupceJmeno) || '—') + '</span></div>' +
-          '<div class="info-row"><span>Telefon zástupce</span>' + (p.zastupceTelefon ? '<a href="tel:' + esc(p.zastupceTelefon) + '">' + esc(p.zastupceTelefon) + '</a>' : '<span>—</span>') + '</div>' +
-          '<div class="info-row"><span>E-mail zástupce</span>' + (p.zastupceEmail ? '<a href="mailto:' + esc(p.zastupceEmail) + '">' + esc(p.zastupceEmail) + '</a>' : '<span>—</span>') + '</div>' +
+          '<span class="box-title">Kontaktní údaje hráče</span>' +
+          contactRow('Telefon hráče', p.telefonHrac, true) +
+          contactRow('E-mail hráče', p.emailHrac, false) +
+        '</div>' +
+        '<div class="info-box">' +
+          '<span class="box-title">Zákonný zástupce</span>' +
+          '<div class="info-row"><span>Jméno</span><span class="info-value">' + (esc(p.zastupceJmeno) || '—') + (p.zastupceJmeno ? copyBtnHtml(p.zastupceJmeno) : '') + '</span></div>' +
+          contactRow('Telefon', p.zastupceTelefon, true) +
+          contactRow('E-mail', p.zastupceEmail, false) +
         '</div>' +
         '<div class="info-box">' +
           '<span class="box-title">Adresa</span>' +
-          '<span style="font-size:13px;">' + (esc(addressLine) || '—') + '</span>' +
+          (mapsHref ? '<a href="' + esc(mapsHref) + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--text);text-decoration:none;">' + esc(addressLine) + '</a>' : '<span style="font-size:13px;">—</span>') +
           '<span style="font-size:11px;color:#5a6169;">Obec: ' + (esc(p.mesto) || '—') + '</span>' +
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title">Registrační checklist</span>' +
-          checklistRows +
-          '<span class="phase-note">Úpravy checklistu, e-mail a přesun do vyřazených budou dostupné v další fázi appky.</span>' +
+          '<span class="box-title">Registrační checklist (' + c.done + '/' + c.total + ')</span>' +
+          '<div class="checklist-wrap">' + checklistRows + '</div>' +
         '</div>' +
       '</div>';
   }
@@ -814,16 +1395,14 @@
     var main = document.getElementById('main');
     if (state.view === 'detail') { main.innerHTML = renderDetailView(); }
     else if (state.view === 'map') { main.innerHTML = renderMapView(); }
+    else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
     else { main.innerHTML = renderListView(); }
 
-    if (state.view === 'list') {
-      var roky = Array.from(new Set(DATA.players.map(function(p){ return String(p.rok); }))).filter(Boolean).sort();
-      fillSelect('rokFilter', roky, state.rok);
-      fillSelect('cityFilter', DATA.cities, state.city);
-      document.getElementById('search').addEventListener('input', function(e) { state.q = e.target.value; render(); });
-      document.getElementById('rokFilter').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
-      document.getElementById('cityFilter').addEventListener('change', function(e) { state.city = e.target.value; render(); });
-    }
+    // Note: the Filtr/Sdílet dropdown panels are deliberately NOT re-rendered here on every
+    // render() call — rebuilding the search <input> on each keystroke would reset its cursor
+    // position/focus. They're (re)built once when opened (toggleSidebarPanel) and refreshed
+    // only when their own controls change.
+    if (document.getElementById('sharePanel') && document.getElementById('sharePanel').style.display === 'block') renderSharePanel();
     if (state.view === 'map') {
       var myRenderToken = ++mapLoadToken;
       initMapIfNeeded().then(function() {
@@ -840,25 +1419,39 @@
     var html = '<div class="cat-item' + (state.category === 'Vše' ? ' active' : '') + '" data-cat="Vše"><span class="dot" style="background:#5a6169"></span>Vše</div>';
     html += DATA.categoryRules.map(function (r) {
       return '<div class="cat-item' + (state.category === r.label ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
-        '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(r.label) + '</div>';
+        '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
     var el = document.getElementById('catList');
     el.innerHTML = html;
     Array.prototype.forEach.call(el.children, function(child) {
       child.addEventListener('click', function() {
         state.category = child.getAttribute('data-cat');
-        state.view = 'list';
+        // Stay on the map if the map is already open (so picking a category re-filters
+        // the markers in place); only detail view kicks back to the list.
+        if (state.view === 'detail') state.view = 'list';
         renderCatList();
         render();
       });
     });
   }
 
+  var modalOverlayEl = document.getElementById('modalOverlay');
+  if (modalOverlayEl) {
+    modalOverlayEl.addEventListener('click', function(e) { if (e.target === modalOverlayEl) closeModal(); });
+  }
+  document.addEventListener('click', function(e) {
+    if (notifPanelOpen) {
+      var panel = document.getElementById('notifPanel');
+      var btn = e.target.closest ? e.target.closest('[onclick="toggleNotifications()"]') : null;
+      if (panel && !panel.contains(e.target) && !btn) { notifPanelOpen = false; panel.style.display = 'none'; }
+    }
+  });
+
   function fillSelect(id, values, selected) {
     var el = document.getElementById(id);
     el.innerHTML = '';
     var allOpt = document.createElement('option');
-    allOpt.value = 'Vše'; allOpt.textContent = (id === 'rokFilter' ? 'Ročník: Vše' : 'Obec: Vše');
+    allOpt.value = 'Vše'; allOpt.textContent = (id.toLowerCase().indexOf('rok') !== -1 ? 'Ročník: Vše' : 'Obec: Vše');
     el.appendChild(allOpt);
     values.forEach(function(v) {
       var opt = document.createElement('option');
