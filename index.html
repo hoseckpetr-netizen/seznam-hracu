@@ -110,6 +110,7 @@
     .checklist-row { display: flex; align-items: center; gap: 10px; padding: 3px 2px; border-bottom: 1px solid #20242a; }
     .checklist-row:last-child { border-bottom: none; }
     .checklist-row .cl-label { flex: 1; font-size: 12px; }
+    .cl-date { font-size: 10px; color: var(--muted); flex-shrink: 0; white-space: nowrap; margin-right: 4px; }
     .cl-icon { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .cl-icon.on { background: rgba(52,211,153,0.15); color: var(--green); }
     .cl-icon.off { background: rgba(248,113,113,0.15); color: var(--red); }
@@ -340,6 +341,15 @@
     'CASH FAČR': 'Platba FAČR', 'ČL KLUBU': 'Člen klubu', 'HR KLUBU': 'Hráč klubu',
     'FOTO PC': 'Foto (PC)', 'FOTO FAČR': 'Foto FAČR', 'SOUHL KIS': 'Souhlas KIS', 'PL. JARO': 'Platba jaro'
   };
+  // These 6 items carry a date (when they were marked done) — shown next to the item and
+  // written into their own "<KEY> DATUM" column (found by header text, like every other
+  // column here) the moment the item is checked. Existing players were backfilled once from
+  // "Datum přidání" (column D) for whichever of these were already checked.
+  var CHECKLIST_DATE_KEYS = ['REG KIS', 'KONTAKTY', 'EMAIL', 'WHATSAPP', 'KIS SOUP', 'CASH KIS'];
+  function formatDateCz_(d) {
+    d = d || new Date();
+    return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
+  }
   // Which checklist items are disabled (excluded from the player card display and from the
   // "kroků hotovo" progress count) — managed from Nastavení, saved per-browser like the
   // category overrides, since there's no spare sheet column to hold this. Everything is
@@ -810,6 +820,11 @@
         var m = {};
         CHECKLIST_KEYS.forEach(function(key) { m[key] = col_(map, key); });
         return m;
+      })(),
+      checklistDateCols: (function() {
+        var m = {};
+        CHECKLIST_DATE_KEYS.forEach(function(key) { m[key] = col_(map, key + ' DATUM'); });
+        return m;
       })()
     };
 
@@ -824,6 +839,11 @@
       CHECKLIST_KEYS.forEach(function (key) {
         var ci = col_(map, key);
         checklist[key] = ci >= 0 ? (row[ci] === true) : false;
+      });
+      var checklistDates = {};
+      CHECKLIST_DATE_KEYS.forEach(function (key) {
+        var ci = idx.checklistDateCols[key];
+        checklistDates[key] = ci >= 0 ? val_(row, ci) : '';
       });
 
       players.push({
@@ -850,7 +870,8 @@
         zastupce2Jmeno: val_(row, idx.zastupce2Jmeno),
         zastupce2Telefon: val_(row, idx.zastupce2Telefon),
         zastupce2Email: val_(row, idx.zastupce2Email),
-        checklist: checklist
+        checklist: checklist,
+        checklistDates: checklistDates
       });
     }
     return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
@@ -1319,7 +1340,8 @@
     var c = checklistCounts(p);
     var checklistRows = activeChecklistKeys(p).map(function(key) {
       var label = CHECKLIST_LABELS[key] || key;
-      return '<tr><td>' + esc(label) + '</td><td>' + (p.checklist[key] ? 'Ano' : 'Ne') + '</td></tr>';
+      var dateStr = (CHECKLIST_DATE_KEYS.indexOf(key) !== -1 && p.checklistDates && p.checklistDates[key]) ? ' (' + esc(p.checklistDates[key]) + ')' : '';
+      return '<tr><td>' + esc(label) + '</td><td>' + (p.checklist[key] ? 'Ano' + dateStr : 'Ne') + '</td></tr>';
     }).join('');
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
     var html = '<h1>FK Slovany Pardubice — Karta hráče</h1>' +
@@ -1446,10 +1468,27 @@
   }
 
   // ---------- Registrační checklist — klikací zaškrtávání (admin only) ----------
-  // Clicking a checklist row toggles it and writes straight back to the matching
-  // "Seznam" sheet cell. Checking "FOTO PC" additionally triggers a one-time photo
-  // import for that player (see importPlayerPhoto above).
+  // Clicking a checklist row first asks for confirmation (a real click is easy to fire by
+  // accident on a touch screen), then writes straight back to the matching "Seznam" sheet
+  // cell. Checking "FOTO PC" additionally triggers a one-time photo import for that player
+  // (see importPlayerPhoto above). For the 6 items in CHECKLIST_DATE_KEYS, checking the item
+  // also stamps today's date into its own "<KEY> DATUM" column.
   function toggleChecklistItem(sheetRow, key) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var newVal = !p.checklist[key];
+    var label = CHECKLIST_LABELS[key] || key;
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Opravdu chcete u hráče <b>' + esc(p.jmenoCele) + '</b> nastavit "' + esc(label) + '" na <b>' + (newVal ? 'ANO' : 'NE') + '</b>?</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyChecklistToggle_(' + sheetRow + ', \'' + jsStr(key) + '\', ' + newVal + ')">Potvrdit</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+  function applyChecklistToggle_(sheetRow, key, newVal) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
@@ -1458,16 +1497,24 @@
       pushNotification('Sloupec pro "' + (CHECKLIST_LABELS[key] || key) + '" nebyl v tabulce nalezen.', 'error');
       return;
     }
-    var newVal = !p.checklist[key];
+    var writes = [{ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[newVal]] }];
+    var isDateTracked = CHECKLIST_DATE_KEYS.indexOf(key) !== -1;
+    var dateColIdx = isDateTracked && DATA.colIndex.checklistDateCols ? DATA.colIndex.checklistDateCols[key] : -1;
+    var newDate = null;
+    if (isDateTracked && newVal === true && dateColIdx != null && dateColIdx >= 0) {
+      newDate = formatDateCz_();
+      writes.push({ range: 'Seznam!' + colIndexToLetter(dateColIdx) + sheetRow, values: [[newDate]] });
+    }
     fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: [{ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[newVal]] }] })
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: writes })
     }).then(function(r) {
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     }).then(function() {
       p.checklist[key] = newVal;
+      if (newDate != null && p.checklistDates) p.checklistDates[key] = newDate;
       render();
       if (key === 'FOTO PC' && newVal === true) importPlayerPhoto(p);
     }).catch(function(err) {
@@ -2124,8 +2171,10 @@
       var on = p.checklist[key];
       var label = CHECKLIST_LABELS[key] || key;
       var attrs = isAdmin ? ' style="cursor:pointer;" onclick="toggleChecklistItem(' + p.sheetRow + ', \'' + jsStr(key) + '\')" title="Klikněte pro změnu"' : '';
+      var dateStr = (CHECKLIST_DATE_KEYS.indexOf(key) !== -1 && p.checklistDates && p.checklistDates[key]) ? '<span class="cl-date">' + esc(p.checklistDates[key]) + '</span>' : '';
       return '<div class="checklist-row"' + attrs + '>' +
         '<span class="cl-label">' + esc(label) + '</span>' +
+        dateStr +
         '<span class="cl-icon ' + (on ? 'on' : 'off') + '">' + (on ? '&#10003;' : '&#10005;') + '</span>' +
       '</div>';
     }).join('');
