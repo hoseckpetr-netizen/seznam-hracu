@@ -518,6 +518,15 @@
   }
 
   // ---------- Copy-to-clipboard ----------
+  // Rodné číslo is stored in the sheet as a bare 10-digit number (no slash — Sheets kept
+  // mangling "RRMMDD/XXXX" as a formula/fraction), so this only reinserts the slash for
+  // display; the underlying value (and what gets saved back) stays the plain digit string.
+  function formatRodneCislo_(v) {
+    var s = (v == null ? '' : v.toString()).replace(/[^0-9]/g, '');
+    if (s.length === 9 || s.length === 10) return s.slice(0, 6) + '/' + s.slice(6);
+    return v ? v.toString() : '';
+  }
+
   function copyBtnHtml(text) {
     if (!text) return '';
     return '<button type="button" class="copy-btn" onclick="event.stopPropagation(); copyText(this, \'' + jsStr(text) + '\')" title="Kopírovat" aria-label="Kopírovat">' +
@@ -892,6 +901,7 @@
       prijmeni: col_(map, 'Příjmení'),
       jmeno: col_(map, 'Jméno', 0),
       datumPridani: col_(map, sheetName === 'Vyřazené' ? 'Datum vyřazení' : 'Datum přidání'),
+      rodneCislo: col_(map, 'Rodné číslo'),
       rok: col_(map, 'Rok'),
       kategorie: col_(map, 'Kategorie'),
       datumNarozeni: col_(map, 'Datum narození (M,D,R)'),
@@ -946,6 +956,7 @@
         jmeno: jmeno,
         jmenoCele: (jmeno + ' ' + prijmeni).trim(),
         datumPridani: val_(row, idx.datumPridani),
+        rodneCislo: val_(row, idx.rodneCislo),
         rok: val_(row, idx.rok),
         kategorie: val_(row, idx.kategorie),
         datumNarozeni: val_(row, idx.datumNarozeni),
@@ -1491,8 +1502,8 @@
   }
 
   // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
-  var EDIT_FIELDS = ['id', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
-  var EDIT_FIELD_LABELS = { id: 'FAČR ID', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
+  var EDIT_FIELDS = ['id', 'rodneCislo', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
+  var EDIT_FIELD_LABELS = { id: 'FAČR ID', rodneCislo: 'Rodné číslo', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
 
   function openEditModal(sheetRow) {
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
@@ -1510,6 +1521,7 @@
     }
     return '<h2>Upravit údaje — ' + esc(p.jmenoCele) + '</h2>' +
       field('id', EDIT_FIELD_LABELS.id, p.id) +
+      field('rodneCislo', EDIT_FIELD_LABELS.rodneCislo, p.rodneCislo) +
       field('telefonHrac', EDIT_FIELD_LABELS.telefonHrac, p.telefonHrac) +
       field('emailHrac', EDIT_FIELD_LABELS.emailHrac, p.emailHrac) +
       field('zastupceJmeno', EDIT_FIELD_LABELS.zastupceJmeno, p.zastupceJmeno) +
@@ -2427,6 +2439,7 @@
       '<div class="detail-grid">' +
         '<div class="info-box">' +
           '<span class="box-title">Kontaktní údaje hráče</span>' +
+          '<div class="info-row"><span>Rodné číslo</span><span class="info-value">' + (esc(formatRodneCislo_(p.rodneCislo)) || '—') + (p.rodneCislo ? copyBtnHtml(formatRodneCislo_(p.rodneCislo)) : '') + '</span></div>' +
           contactRow('Telefon hráče', p.telefonHrac, true) +
           contactRow('E-mail hráče', p.emailHrac, false) +
         '</div>' +
