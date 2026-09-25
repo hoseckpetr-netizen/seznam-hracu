@@ -333,6 +333,21 @@
     'CASH FAČR': 'Platba FAČR', 'ČL KLUBU': 'Člen klubu', 'HR KLUBU': 'Hráč klubu',
     'FOTO PC': 'Foto (PC)', 'FOTO FAČR': 'Foto FAČR', 'SOUHL KIS': 'Souhlas KIS', 'PL. JARO': 'Platba jaro'
   };
+  // Which checklist items are disabled (excluded from the player card display and from the
+  // "kroků hotovo" progress count) — managed from Nastavení, saved per-browser like the
+  // category overrides, since there's no spare sheet column to hold this. Everything is
+  // active by default (disabled list starts empty).
+  var CHECKLIST_DISABLED_KEY = 'fks_checklist_disabled_v1';
+  function loadDisabledChecklistKeys_() {
+    try { return JSON.parse(localStorage.getItem(CHECKLIST_DISABLED_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveDisabledChecklistKeys_(arr) {
+    try { localStorage.setItem(CHECKLIST_DISABLED_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  function activeChecklistKeys(p) {
+    var disabled = loadDisabledChecklistKeys_();
+    return Object.keys(p.checklist).filter(function(k) { return disabled.indexOf(k) === -1; });
+  }
 
   var DATA = null;
   // categories: [] means "Vše" (no filter); otherwise a player must be in one of the listed
@@ -1139,7 +1154,7 @@
   }
 
   function checklistCounts(p) {
-    var keys = Object.keys(p.checklist);
+    var keys = activeChecklistKeys(p);
     var done = keys.filter(function(k){ return p.checklist[k]; }).length;
     return { done: done, total: keys.length };
   }
@@ -1295,7 +1310,7 @@
     var p = DATA.players.find(function(x) { return x.sheetRow === state.selectedRow; });
     if (!p) return;
     var c = checklistCounts(p);
-    var checklistRows = Object.keys(p.checklist).map(function(key) {
+    var checklistRows = activeChecklistKeys(p).map(function(key) {
       var label = CHECKLIST_LABELS[key] || key;
       return '<tr><td>' + esc(label) + '</td><td>' + (p.checklist[key] ? 'Ano' : 'Ne') + '</td></tr>';
     }).join('');
@@ -1784,14 +1799,36 @@
     });
   }
 
+  // Checklist items are managed as an explicit "Uložit checklist" action (unlike the
+  // category "Ve filtru" toggle, which applies instantly) — reads every row's checkbox,
+  // saves the disabled set, then re-renders so counts/rows everywhere reflect it right away.
+  function saveChecklistSettings() {
+    var disabled = [];
+    document.querySelectorAll('#main tr[data-key]').forEach(function(row) {
+      var key = row.getAttribute('data-key');
+      var cb = row.querySelector('[data-field="active"]');
+      if (cb && !cb.checked) disabled.push(key);
+    });
+    saveDisabledChecklistKeys_(disabled);
+    var statusEl = document.getElementById('checklistSaveStatus');
+    if (statusEl) statusEl.textContent = 'Uloženo.';
+    render();
+  }
+
   function renderSettingsView() {
     if (!DATA || DATA.role !== 'admin') {
       return '<div class="header"><h1>Nastavení</h1></div><div class="loading">Nastavení jsou dostupná pouze pro správce účtu.</div>';
     }
     var catRows = renderCategoryEditorRows_();
 
+    var disabledChecklistKeys = loadDisabledChecklistKeys_();
     var checklistRows = CHECKLIST_KEYS.map(function(key) {
-      return '<div class="info-row"><span>' + esc(CHECKLIST_LABELS[key] || key) + '</span><span style="color:var(--muted);font-size:11px;">' + esc(key) + '</span></div>';
+      var isActive = disabledChecklistKeys.indexOf(key) === -1;
+      return '<tr data-key="' + esc(key) + '">' +
+        '<td>' + esc(CHECKLIST_LABELS[key] || key) + '</td>' +
+        '<td style="color:var(--muted);font-size:11px;">' + esc(key) + '</td>' +
+        '<td style="text-align:center;"><input type="checkbox" class="cat-in" data-field="active"' + (isActive ? ' checked' : '') + '></td>' +
+      '</tr>';
     }).join('');
 
     var iconTag = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13 21l-9-9V4h8l9 9.41a2 2 0 0 1 0 2.83z"></path><circle cx="7.5" cy="7.5" r="1.5"></circle></svg>';
@@ -1818,8 +1855,14 @@
         '</div>' +
         '<div class="info-box">' +
           '<span class="box-title box-head">' + iconList + '<span>Položky checklistu</span></span>' +
-          checklistRows +
-          '<span class="phase-note">Úprava/přidání položek checklistu přímo v appce bude v další verzi.</span>' +
+          '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
+            '<th>Položka</th><th>Klíč</th><th>Aktivní</th>' +
+          '</tr></thead><tbody>' + checklistRows + '</tbody></table></div>' +
+          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+            '<button class="icon-btn toolbar-btn" onclick="saveChecklistSettings()">Uložit checklist</button>' +
+            '<span id="checklistSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+          '</div>' +
+          '<span class="phase-note">Neaktivní položky se u hráčů přestanou zobrazovat a nepočítají se do "kroků hotovo". Ukládá se jen v tomto prohlížeči (stejně jako u kategorií). Přidání nových položek přímo v appce bude v další verzi.</span>' +
         '</div>' +
         '<div class="info-box">' +
           '<span class="box-title box-head">' + iconCamera + '<span>Fotky hráčů</span></span>' +
@@ -2067,7 +2110,7 @@
     var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
 
     var isAdmin = DATA.role === 'admin';
-    var checklistRows = Object.keys(p.checklist).map(function(key) {
+    var checklistRows = activeChecklistKeys(p).map(function(key) {
       var on = p.checklist[key];
       var label = CHECKLIST_LABELS[key] || key;
       var attrs = isAdmin ? ' style="cursor:pointer;" onclick="toggleChecklistItem(' + p.sheetRow + ', \'' + jsStr(key) + '\')" title="Klikněte pro změnu"' : '';
