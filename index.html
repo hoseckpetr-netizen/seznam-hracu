@@ -260,7 +260,7 @@
   var CATEGORY_LABEL_DISPLAY = {
     'Mini': 'U7', 'Minipřípravka': 'U7',
     'U19 Starší Dorost': 'U19', 'U15 Starší žáci': 'U15', 'U13 Mladší žáci': 'U13',
-    'U12 Mladší žáci': 'U12', 'U11 A Starší přípravka': 'U11', 'U11 B Starší přípravka': 'U10',
+    'U12 Mladší žáci': 'U12', 'U11 A Starší přípravka': 'U11A', 'U11 B Starší přípravka': 'U11B',
     'U9 Mladší přípravka': 'U9'
   };
   function displayCategoryLabel(label) {
@@ -278,17 +278,21 @@
     try { localStorage.setItem(CATEGORY_COLOR_OVERRIDES_KEY, JSON.stringify(map)); } catch (e) {}
   }
   var CHECKLIST_KEYS = ['REG KIS','KONTAKTY','EMAIL','WHATSAPP','KIS SOUP','CASH KIS','REG FAČR','CASH FAČR','ČL KLUBU','HR KLUBU','FOTO PC','FOTO FAČR','SOUHL KIS','PL. JARO'];
-  // Approximates the color-coding from Petr's own "Kategorie" sheet tab. Any of these can
-  // be overridden per-category from the Nastavení editor, which then persists to the sheet.
+  // Petr's exact spec: U7 žlutá, U9 oranžová, U11A světle červená, U11B červená (ne
+  // výrazná), U12 světle modrá, U13 tmavě modrá, U15 zelená, U19 fialová. Any of these can
+  // still be overridden per-category from the Nastavení editor (saved per-browser).
   var CATEGORY_COLORS = {
-    'Muži': '#7DD3FC', 'U17': '#FB923C', 'U7': '#F5CBA7', 'Mini': '#F5CBA7',
-    'Minipřípravka': '#F5CBA7',
-    'U19 Starší Dorost': '#FB7185', 'U15 Starší žáci': '#A78BFA', 'U13 Mladší žáci': '#F472B6',
-    'U12 Mladší žáci': '#F97316', 'U11 A Starší přípravka': '#EF4444', 'U11 B Starší přípravka': '#60A5FA',
-    'U9 Mladší přípravka': '#F5CBA7',
+    'Muži': '#7DD3FC', 'U17': '#FB923C',
+    'Mini': '#FBBF24', 'Minipřípravka': '#FBBF24', 'U7': '#FBBF24',
+    'U9 Mladší přípravka': '#F97316', 'U9': '#F97316',
+    'U11 A Starší přípravka': '#F4A6A6', 'U11A': '#F4A6A6',
+    'U11 B Starší přípravka': '#B33A3A', 'U11B': '#B33A3A',
+    'U12 Mladší žáci': '#90CAF9', 'U12': '#90CAF9',
+    'U13 Mladší žáci': '#1E3A8A', 'U13': '#1E3A8A',
+    'U15 Starší žáci': '#43A047', 'U15': '#43A047',
+    'U19 Starší Dorost': '#8E44AD', 'U19': '#8E44AD',
     // Kept for anything still keyed by the older short codes.
-    'U19': '#FB7185', 'U15': '#A78BFA', 'U13': '#F472B6', 'U12': '#F97316',
-    'U11': '#EF4444', 'U10': '#60A5FA', 'U9': '#F5CBA7'
+    'U11': '#F4A6A6', 'U10': '#B33A3A'
   };
   var CHECKLIST_LABELS = {
     'REG KIS': 'Registrace KIS', 'KONTAKTY': 'Kontakty', 'EMAIL': 'E-mail', 'WHATSAPP': 'WhatsApp',
