@@ -628,7 +628,10 @@
     var cache = getPhotoCacheMem();
     if (cache[key]) { p.photoDataUrl = cache[key]; if (!skipRender) render(); return Promise.resolve(true); }
     return ensurePhotoIndex().then(function(idx) {
-      var f = idx[key];
+      // Most photos are named "Příjmení Jméno", but a few get added as "Jméno Příjmení"
+      // (natural reading order) instead — try both before giving up, so a photo doesn't
+      // silently fail to match just because of word order.
+      var f = idx[key] || idx[normalizePhotoKey(p.jmeno + ' ' + p.prijmeni)];
       if (!f) {
         if (!silent) pushNotification('Fotka pro ' + p.jmenoCele + ' nenalezena ve složce "Fotky hráčů" (hledáno jako "' + p.prijmeni + ' ' + p.jmeno + '").', 'warn');
         return false;
