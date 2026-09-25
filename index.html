@@ -595,10 +595,10 @@
 
   // ---------- Mapa hráčů (Google Maps JavaScript API + Geocoding API, addresses geocoded client-side) ----------
   function loadGeocodeCache() {
-    try { geocodeCache = JSON.parse(localStorage.getItem('fks_geocode_cache_gmaps') || '{}'); } catch (e) { geocodeCache = {}; }
+    try { geocodeCache = JSON.parse(localStorage.getItem('fks_geocode_cache_gmaps_v2') || '{}'); } catch (e) { geocodeCache = {}; }
   }
   function saveGeocodeCache() {
-    try { localStorage.setItem('fks_geocode_cache_gmaps', JSON.stringify(geocodeCache)); } catch (e) {}
+    try { localStorage.setItem('fks_geocode_cache_gmaps_v2', JSON.stringify(geocodeCache)); } catch (e) {}
   }
   function addressKey(p) {
     return [p.ulice, p.cp, p.mesto, p.psc].filter(Boolean).join(', ');
@@ -617,18 +617,27 @@
     });
     return googleMapsLoadPromise;
   }
+  var geocoderInstance = null;
   function geocodeAddress(addr) {
+    // Uses the client-side google.maps.Geocoder (part of the Maps JavaScript API bundle),
+    // NOT the standalone Geocoding REST endpoint — that endpoint rejects HTTP-referrer-restricted
+    // keys ("API keys with referer restrictions cannot be used with this API"), since referrer
+    // checks only apply to browser-side JS API calls, not direct server-style REST requests.
     if (Object.prototype.hasOwnProperty.call(geocodeCache, addr)) return Promise.resolve(geocodeCache[addr]);
-    var url = 'https://maps.googleapis.com/maps/api/geocode/json?region=cz&address=' + encodeURIComponent(addr + ', Česká republika') + '&key=' + GOOGLE_MAPS_API_KEY;
-    return fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-      var loc = null;
-      if (data && data.status === 'OK' && data.results && data.results[0]) {
-        var loc0 = data.results[0].geometry.location;
-        loc = { lat: loc0.lat, lon: loc0.lng };
-      }
-      geocodeCache[addr] = loc;
-      saveGeocodeCache();
-      return loc;
+    return loadGoogleMaps().then(function(google) {
+      if (!geocoderInstance) geocoderInstance = new google.maps.Geocoder();
+      return new Promise(function(resolve) {
+        geocoderInstance.geocode({ address: addr + ', Česká republika', region: 'cz' }, function(results, status) {
+          var loc = null;
+          if (status === 'OK' && results && results[0]) {
+            var loc0 = results[0].geometry.location;
+            loc = { lat: loc0.lat(), lon: loc0.lng() };
+          }
+          geocodeCache[addr] = loc;
+          saveGeocodeCache();
+          resolve(loc);
+        });
+      });
     }).catch(function() {
       geocodeCache[addr] = null;
       saveGeocodeCache();
