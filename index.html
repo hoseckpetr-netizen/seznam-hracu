@@ -26,8 +26,14 @@
     .sidebar-tools .toolbar-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .notif-panel .notif-row.clickable { cursor: pointer; }
     .notif-panel .notif-row.clickable:hover { background: rgba(0,255,255,0.08); }
-    .filter-panel-inner { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
-    .filter-panel-inner input, .filter-panel-inner select { width: 100%; }
+    .filter-panel-inner { padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+    .filter-panel-inner input, .filter-panel-inner select { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 7px; font-family: inherit; }
+    .filter-panel-inner .fp-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .filter-panel-inner .fp-divider { height: 1px; background: var(--border); margin: 1px 0; }
+    .filter-panel-inner .fp-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text); cursor: pointer; }
+    .filter-panel-inner .fp-check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin: 0; }
+    .filter-panel-inner .fp-reset { font-size: 11px; color: var(--muted); text-decoration: none; text-align: center; margin-top: 2px; }
+    .filter-panel-inner .fp-reset:hover { color: var(--accent); }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; }
     .cat-item.active { background: rgba(0,255,255,0.1); border-color: var(--accent); color: var(--text); }
     .cat-item[data-cat="__vyrazeni__"] { margin-top: 8px; padding-top: 11px; border-top: 1px solid var(--border); border-radius: 0; }
@@ -264,18 +270,18 @@
       <div class="cat-list" id="catList"></div>
       <div class="sidebar-tools">
         <div style="position:relative;">
-          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('share')" aria-label="Sdílet" title="Sdílet">
+          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('share', this)" aria-label="Sdílet" title="Sdílet">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
             Sdílet
           </button>
           <div id="sharePanel" class="notif-panel" style="width:230px;"></div>
         </div>
         <div style="position:relative;">
-          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('filter')" aria-label="Filtr" title="Filtr">
+          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('filter', this)" aria-label="Filtr" title="Filtr">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
             Filtr
           </button>
-          <div id="filterPanel" class="notif-panel" style="width:230px;"></div>
+          <div id="filterPanel" class="notif-panel" style="width:264px;"></div>
         </div>
       </div>
       <div class="role-badge" id="roleBadge"></div>
@@ -380,7 +386,8 @@
   var DATA = null;
   // categories: [] means "Vše" (no filter); otherwise a player must be in one of the listed
   // categories (an OR filter — e.g. ['U11','U12'] shows both groups at once).
-  var state = { categories: [], rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {} };
+  var state = { categories: [], rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {},
+    missingFotoPC: false, missingFotoFacr: false, checklistKey: '', checklistStatus: 'nesplneno' };
   var tokenClient = null;
   var accessToken = null;
   var mapInstance = null, markersLayer = [], geocodeCache = {}, mapLoadToken = 0;
@@ -707,20 +714,43 @@
     }).join('');
   }
   // ---------- Sidebar Sdílet / Filtr dropdown panels ----------
-  function toggleSidebarPanel(which) {
+  function toggleSidebarPanel(which, btn) {
     var ids = { share: 'sharePanel', filter: 'filterPanel' };
     Object.keys(ids).forEach(function(key) {
       var el = document.getElementById(ids[key]);
       if (!el) return;
       if (key === which) {
         var isOpen = el.style.display === 'block';
-        el.style.display = isOpen ? 'none' : 'block';
-        if (!isOpen && key === 'filter') renderFilterPanel();
-        if (!isOpen && key === 'share') renderSharePanel();
+        if (isOpen) {
+          el.style.display = 'none';
+        } else {
+          el.style.display = 'block';
+          if (key === 'filter') renderFilterPanel();
+          if (key === 'share') renderSharePanel();
+          if (btn) positionDropdownPanel_(el, btn);
+        }
       } else {
         el.style.display = 'none';
       }
     });
+  }
+  // Dropdown panels (Sdílet/Filtr) were positioned with plain CSS `right:0`, relative to a
+  // narrow toolbar button — on mobile that pushed a wide panel off the left edge of the
+  // screen (clipped, unreadable). Positioning them as `fixed`, computed from the button's own
+  // on-screen position and clamped to the viewport, keeps them fully visible regardless of
+  // how narrow their container is.
+  function positionDropdownPanel_(panelEl, btn) {
+    var rect = btn.getBoundingClientRect();
+    var width = panelEl.offsetWidth || 230;
+    var left = rect.left;
+    if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+    if (left < 8) left = 8;
+    var top = rect.bottom + 6;
+    if (top + panelEl.offsetHeight > window.innerHeight - 8) top = Math.max(8, rect.top - panelEl.offsetHeight - 6);
+    panelEl.style.position = 'fixed';
+    panelEl.style.left = left + 'px';
+    panelEl.style.top = top + 'px';
+    panelEl.style.right = 'auto';
   }
   function shareCurrentCategoryPDF() {
     selectAllFiltered();
@@ -736,17 +766,46 @@
   function renderFilterPanel() {
     var el = document.getElementById('filterPanel');
     if (!el || !DATA) return;
+    var disabled = loadDisabledChecklistKeys_();
+    var checklistOptions = (DATA.players[0] ? Object.keys(DATA.players[0].checklist) : []).filter(function(k) { return disabled.indexOf(k) === -1; });
     el.innerHTML = '<div class="filter-panel-inner">' +
         '<input type="search" id="sidebarSearch" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
-        '<select id="sidebarRok"></select>' +
-        '<select id="sidebarCity"></select>' +
+        '<div class="fp-row-2"><select id="sidebarRok"></select><select id="sidebarCity"></select></div>' +
+        '<div class="fp-divider"></div>' +
+        '<label class="fp-check"><input type="checkbox" id="fpMissingPC"' + (state.missingFotoPC ? ' checked' : '') + '>Chybí foto PC</label>' +
+        '<label class="fp-check"><input type="checkbox" id="fpMissingFacr"' + (state.missingFotoFacr ? ' checked' : '') + '>Chybí foto FAČR</label>' +
+        '<div class="fp-divider"></div>' +
+        '<div class="fp-row-2">' +
+          '<select id="fpChecklistKey"></select>' +
+          '<select id="fpChecklistStatus">' +
+            '<option value="nesplneno"' + (state.checklistStatus === 'nesplneno' ? ' selected' : '') + '>Nesplněno</option>' +
+            '<option value="splneno"' + (state.checklistStatus === 'splneno' ? ' selected' : '') + '>Splněno</option>' +
+          '</select>' +
+        '</div>' +
+        '<a href="javascript:void(0)" class="fp-reset" onclick="resetSidebarFilters()">Zrušit filtry</a>' +
       '</div>';
     var roky = Array.from(new Set(DATA.players.map(function(p) { return String(p.rok); }))).filter(Boolean).sort();
     fillSelect('sidebarRok', roky, state.rok);
     fillSelect('sidebarCity', DATA.cities, state.city);
+    var keySel = document.getElementById('fpChecklistKey');
+    keySel.innerHTML = '<option value="">Položka checklistu: žádná</option>' +
+      checklistOptions.map(function(k) {
+        return '<option value="' + esc(k) + '"' + (state.checklistKey === k ? ' selected' : '') + '>' + esc(CHECKLIST_LABELS[k] || k) + '</option>';
+      }).join('');
     document.getElementById('sidebarSearch').addEventListener('input', function(e) { state.q = e.target.value; render(); });
     document.getElementById('sidebarRok').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
     document.getElementById('sidebarCity').addEventListener('change', function(e) { state.city = e.target.value; render(); });
+    document.getElementById('fpMissingPC').addEventListener('change', function(e) { state.missingFotoPC = e.target.checked; render(); });
+    document.getElementById('fpMissingFacr').addEventListener('change', function(e) { state.missingFotoFacr = e.target.checked; render(); });
+    keySel.addEventListener('change', function(e) { state.checklistKey = e.target.value; render(); });
+    document.getElementById('fpChecklistStatus').addEventListener('change', function(e) { state.checklistStatus = e.target.value; render(); });
+  }
+  function resetSidebarFilters() {
+    state.q = ''; state.rok = 'Vše'; state.city = 'Vše';
+    state.missingFotoPC = false; state.missingFotoFacr = false;
+    state.checklistKey = ''; state.checklistStatus = 'nesplneno';
+    renderFilterPanel();
+    render();
   }
 
   function toggleNotifications() {
@@ -1208,6 +1267,13 @@
       if (state.rok !== 'Vše' && String(p.rok) !== state.rok) return false;
       if (state.city !== 'Vše' && p.mesto !== state.city) return false;
       if (state.q && p.jmenoCele.toLowerCase().indexOf(state.q.toLowerCase()) === -1) return false;
+      if (state.missingFotoPC && p.checklist['FOTO PC']) return false;
+      if (state.missingFotoFacr && p.checklist['FOTO FAČR']) return false;
+      if (state.checklistKey) {
+        var done = !!p.checklist[state.checklistKey];
+        if (state.checklistStatus === 'splneno' && !done) return false;
+        if (state.checklistStatus === 'nesplneno' && done) return false;
+      }
       return true;
     });
   }
@@ -2408,6 +2474,12 @@
       var btn = e.target.closest ? e.target.closest('[onclick="toggleNotifications()"]') : null;
       if (panel && !panel.contains(e.target) && !btn) { notifPanelOpen = false; panel.style.display = 'none'; }
     }
+    ['sharePanel', 'filterPanel'].forEach(function(id) {
+      var panel = document.getElementById(id);
+      if (!panel || panel.style.display !== 'block') return;
+      var isTriggerBtn = e.target.closest && e.target.closest('[onclick*="toggleSidebarPanel"]');
+      if (!panel.contains(e.target) && !isTriggerBtn) panel.style.display = 'none';
+    });
   });
 
   function fillSelect(id, values, selected) {
