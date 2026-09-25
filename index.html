@@ -59,6 +59,8 @@
     .detail-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
     .detail-head .ring { width: 60px; height: 60px; }
     .detail-head .ring .ring-hole { font-size: 15px; }
+    .detail-photo { position: relative; width: 116px; height: 148px; flex-shrink: 0; border-radius: 14px; overflow: hidden; border: 3px solid var(--accent); background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 24px; }
+    .detail-photo img { width: 100%; height: 100%; object-fit: cover; }
     .detail-name { font-size: 19px; font-weight: 600; }
     .detail-sub { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-top: 3px; }
     .detail-progress { font-size: 12px; color: var(--accent); font-weight: 500; margin-top: 3px; }
@@ -185,7 +187,9 @@
   <div class="app" id="appRoot" style="display:none;">
     <div class="sidebar">
       <div class="brand">
-        <div class="logo"><img src="logo.png" alt="FK Slovany Pardubice"></div><div class="name">Seznam hráčů</div>
+        <button class="icon-btn logo" type="button" onclick="goHome()" aria-label="Domů" title="Domů (zpět na seznam)" style="background:none;border:none;padding:0;cursor:pointer;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);"><path d="M3 9.5 12 3l9 6.5"></path><path d="M5 10.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9.5"></path></svg>
+        </button><div class="name">Seznam hráčů</div>
         <div class="icons">
           <button class="icon-btn" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -563,6 +567,23 @@
       if (!silent) pushNotification('Import fotky hráče ' + p.jmenoCele + ' selhal: ' + err.message, 'error');
       return false;
     });
+  }
+  // Runs right after every load (any signed-in account, not just admin — it only ever reads
+  // from Drive into this browser's own cache, never writes anything back to the sheet) so
+  // photos just show up in the list, instead of only appearing one by one as each player's
+  // card gets opened.
+  function autoImportMissingPhotos() {
+    if (!DATA || !DATA.players) return;
+    var candidates = DATA.players.filter(function(p) { return p.checklist['FOTO PC'] && !p.photoDataUrl; });
+    if (!candidates.length) return;
+    var CONCURRENCY = 5;
+    var nextIndex = 0;
+    function worker() {
+      var i = nextIndex++;
+      if (i >= candidates.length) return;
+      importPlayerPhoto(candidates[i], true, false).then(worker);
+    }
+    for (var w = 0; w < Math.min(CONCURRENCY, candidates.length); w++) worker();
   }
   function avatarInnerHtml(p, size) {
     if (p.photoDataUrl) {
@@ -1064,6 +1085,7 @@
           applyCachedPhotosToRoster();
           renderCatList();
           render();
+          autoImportMissingPhotos();
         });
     }).catch(function(err) {
       clearTimeout(slowTimer);
@@ -1101,6 +1123,7 @@
   function openDetail(sheetRow) {
     state.view = 'detail';
     state.selectedRow = sheetRow;
+    pushSubView();
     render();
     // If this player already has "FOTO PC" checked (photo was imported by someone else,
     // in another browser) but this browser hasn't cached it yet, fetch it now — this is
@@ -1110,25 +1133,45 @@
     if (p && p.checklist['FOTO PC'] && !p.photoDataUrl) importPlayerPhoto(p, true);
   }
 
-  function backToList() {
+  // Minimal history integration: every navigation away from the list pushes one history
+  // entry, so the browser/phone back gesture ("Nefunguje zpět") does something sensible —
+  // it lands back on the list — instead of leaving the app entirely (there was previously no
+  // history.pushState anywhere, so back had nothing of the app's own to go back to).
+  var navDepth = 0;
+  function pushSubView() {
+    navDepth++;
+    try { history.pushState({ fksNavDepth: navDepth }, ''); } catch (e) {}
+  }
+  window.addEventListener('popstate', function() {
+    navDepth = Math.max(0, navDepth - 1);
     state.view = 'list';
     state.selectedRow = null;
     render();
+  });
+  function backToList() {
+    state.view = 'list';
+    state.selectedRow = null;
+    if (navDepth > 0) { history.back(); } else { render(); }
+    render();
   }
+  function goHome() { backToList(); }
 
   function openMap() {
     state.view = 'map';
+    pushSubView();
     render();
   }
 
   function openSettings() {
     state.view = 'settings';
+    pushSubView();
     render();
   }
 
   // ---------- Vyřazení hráči (read-only) ----------
   function openVyrazeni() {
     state.view = 'vyrazeni';
+    pushSubView();
     render();
   }
   function renderVyrazeniView() {
@@ -1137,10 +1180,9 @@
     });
     var rows = players.map(function(p) {
       return '<div class="player-card" onclick="openVyrazeniDetail(' + p.sheetRow + ')">' +
-        '<div class="ring" style="' + ringStyle(0, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
+        '<div class="ring" style="' + ringStyle(0) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
         '<span class="pc-name">' + esc(p.jmenoCele) + '</span>' +
         '<span class="pc-birth">Vyřazen<br><b>' + esc(p.datumVyrazeni || '—') + '</b></span>' +
-        '<span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(p.categoryGroup) + '</span>' +
       '</div>';
     }).join('');
     return '<div class="header"><h1>Vyřazení hráči</h1><div class="count">' + players.length + ' hráčů</div></div>' +
@@ -1158,7 +1200,7 @@
     var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
     document.getElementById('modalBox').innerHTML =
       '<h2>' + esc(p.jmenoCele) + (p.id ? ' <span class="detail-id">ID ' + esc(p.id) + '</span>' : '') + '</h2>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">' + esc(p.categoryGroup) + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + ' · vyřazen ' + esc(p.datumVyrazeni) + '</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + ' · vyřazen ' + esc(p.datumVyrazeni) + '</div>' +
       '<div class="info-row"><span>Telefon hráče</span><span class="info-value">' + (esc(p.telefonHrac) || '—') + '</span></div>' +
       '<div class="info-row"><span>E-mail hráče</span><span class="info-value">' + (esc(p.emailHrac) || '—') + '</span></div>' +
       '<div class="info-row"><span>Zástupce</span><span class="info-value">' + (esc(p.zastupceJmeno) || '—') + '</span></div>' +
@@ -1935,7 +1977,7 @@
       var clickAction = state.selectMode ? 'toggleSelect(' + p.sheetRow + ')' : 'openDetail(' + p.sheetRow + ')';
       return '<div class="player-card" onclick="' + clickAction + '">' +
         checkboxHtml +
-        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
+        '<div class="ring" style="' + ringStyle(pct) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
         '<span class="pc-name">' + esc(p.jmenoCele) + '</span>' +
         '<span class="pc-birth">' + esc(p.datumNarozeni) + (p.vek ? '<br><b>' + esc(p.vek) + ' let</b>' : '') + '</span>' +
         '<span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' +
@@ -1990,7 +2032,7 @@
         '</div>' +
       '</div>' +
       '<div class="detail-head">' +
-        '<div class="ring" style="' + ringStyle(pct, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 160) + '</div></div>' +
+        '<div class="detail-photo">' + avatarInnerHtml(p) + '</div>' +
         '<div>' +
           '<div class="detail-name">' + esc(p.jmenoCele) + (p.id ? '<span class="detail-id">ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') + '</div>' +
           '<div class="detail-sub"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + (p.kategorie ? ' · ' + esc(p.kategorie) : '') + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + '</div>' +
