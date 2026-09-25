@@ -30,8 +30,9 @@
     .filter-panel-inner input, .filter-panel-inner select { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 7px; font-family: inherit; }
     .filter-panel-inner .fp-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .filter-panel-inner .fp-divider { height: 1px; background: var(--border); margin: 1px 0; }
-    .filter-panel-inner .fp-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text); cursor: pointer; }
-    .filter-panel-inner .fp-check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin: 0; }
+    .filter-panel-inner .fp-toggle-btn { background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 7px 8px; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+    .filter-panel-inner .fp-toggle-btn:hover { border-color: var(--accent); }
+    .filter-panel-inner .fp-toggle-btn.active { background: rgba(0,255,255,0.12); border-color: var(--accent); color: var(--accent); font-weight: 600; }
     .filter-panel-inner .fp-reset { font-size: 11px; color: var(--muted); text-decoration: none; text-align: center; margin-top: 2px; }
     .filter-panel-inner .fp-reset:hover { color: var(--accent); }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; }
@@ -387,7 +388,7 @@
   // categories: [] means "Vše" (no filter); otherwise a player must be in one of the listed
   // categories (an OR filter — e.g. ['U11','U12'] shows both groups at once).
   var state = { categories: [], rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {},
-    missingFotoPC: false, missingFotoFacr: false, checklistKey: '', checklistStatus: 'nesplneno' };
+    missingAnyStep: false, noPhoto: false, checklistKey: '', checklistStatus: 'nesplneno' };
   var tokenClient = null;
   var accessToken = null;
   var mapInstance = null, markersLayer = [], geocodeCache = {}, mapLoadToken = 0;
@@ -772,15 +773,16 @@
         '<input type="search" id="sidebarSearch" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
         '<div class="fp-row-2"><select id="sidebarRok"></select><select id="sidebarCity"></select></div>' +
         '<div class="fp-divider"></div>' +
-        '<label class="fp-check"><input type="checkbox" id="fpMissingPC"' + (state.missingFotoPC ? ' checked' : '') + '>Chybí foto PC</label>' +
-        '<label class="fp-check"><input type="checkbox" id="fpMissingFacr"' + (state.missingFotoFacr ? ' checked' : '') + '>Chybí foto FAČR</label>' +
-        '<div class="fp-divider"></div>' +
         '<div class="fp-row-2">' +
           '<select id="fpChecklistKey"></select>' +
           '<select id="fpChecklistStatus">' +
             '<option value="nesplneno"' + (state.checklistStatus === 'nesplneno' ? ' selected' : '') + '>Nesplněno</option>' +
             '<option value="splneno"' + (state.checklistStatus === 'splneno' ? ' selected' : '') + '>Splněno</option>' +
           '</select>' +
+        '</div>' +
+        '<div class="fp-row-2">' +
+          '<button type="button" class="fp-toggle-btn' + (state.missingAnyStep ? ' active' : '') + '" onclick="toggleFpFlag(\'missingAnyStep\')">Chybí něco</button>' +
+          '<button type="button" class="fp-toggle-btn' + (state.noPhoto ? ' active' : '') + '" onclick="toggleFpFlag(\'noPhoto\')">Není foto</button>' +
         '</div>' +
         '<a href="javascript:void(0)" class="fp-reset" onclick="resetSidebarFilters()">Zrušit filtry</a>' +
       '</div>';
@@ -795,14 +797,17 @@
     document.getElementById('sidebarSearch').addEventListener('input', function(e) { state.q = e.target.value; render(); });
     document.getElementById('sidebarRok').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
     document.getElementById('sidebarCity').addEventListener('change', function(e) { state.city = e.target.value; render(); });
-    document.getElementById('fpMissingPC').addEventListener('change', function(e) { state.missingFotoPC = e.target.checked; render(); });
-    document.getElementById('fpMissingFacr').addEventListener('change', function(e) { state.missingFotoFacr = e.target.checked; render(); });
     keySel.addEventListener('change', function(e) { state.checklistKey = e.target.value; render(); });
     document.getElementById('fpChecklistStatus').addEventListener('change', function(e) { state.checklistStatus = e.target.value; render(); });
   }
+  function toggleFpFlag(key) {
+    state[key] = !state[key];
+    renderFilterPanel();
+    render();
+  }
   function resetSidebarFilters() {
     state.q = ''; state.rok = 'Vše'; state.city = 'Vše';
-    state.missingFotoPC = false; state.missingFotoFacr = false;
+    state.missingAnyStep = false; state.noPhoto = false;
     state.checklistKey = ''; state.checklistStatus = 'nesplneno';
     renderFilterPanel();
     render();
@@ -1267,8 +1272,8 @@
       if (state.rok !== 'Vše' && String(p.rok) !== state.rok) return false;
       if (state.city !== 'Vše' && p.mesto !== state.city) return false;
       if (state.q && p.jmenoCele.toLowerCase().indexOf(state.q.toLowerCase()) === -1) return false;
-      if (state.missingFotoPC && p.checklist['FOTO PC']) return false;
-      if (state.missingFotoFacr && p.checklist['FOTO FAČR']) return false;
+      if (state.missingAnyStep && activeChecklistKeys(p).every(function(k) { return p.checklist[k]; })) return false;
+      if (state.noPhoto && p.photoDataUrl) return false;
       if (state.checklistKey) {
         var done = !!p.checklist[state.checklistKey];
         if (state.checklistStatus === 'splneno' && !done) return false;
