@@ -186,6 +186,9 @@
           <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
           </button>
+          <button class="icon-btn" type="button" onclick="openVyrazeni()" aria-label="Vyřazení hráči" title="Vyřazení hráči">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
+          </button>
           <div style="position:relative;">
             <button class="icon-btn" type="button" onclick="toggleNotifications()" aria-label="Notifikace" title="Notifikace">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
@@ -238,7 +241,7 @@
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
   // For Radek (fkslovany@gmail.com, viewer role) to see photos too, this folder needs to
   // be shared with his account (view access) — same as the spreadsheet already is.
-  var PHOTOS_FOLDER_ID = '180Z6_Vuk8F2t1ktlmr0kQAtxAs_SIGMT';
+  var PHOTOS_FOLDER_ID = '180Z6_Vuk8F2t1ktImr0kQAtxAs_SIGMT';
   var ADMIN_EMAILS = ['hoseck.petr@gmail.com'];
   var VIEWER_EMAILS = ['fkslovany@gmail.com'];
   // Display-only renames — the underlying category label (used for year-range matching
@@ -483,15 +486,15 @@
   }
   // Finds this player's photo by name in the "Fotky hráčů" Drive folder, downloads it,
   // and caches it. Triggered from toggleChecklistItem when "FOTO PC" is checked on.
-  function importPlayerPhoto(p, silent) {
+  function importPlayerPhoto(p, silent, skipRender) {
     var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
     var cache = loadPhotoCache();
-    if (cache[key]) { p.photoDataUrl = cache[key]; render(); return Promise.resolve(); }
+    if (cache[key]) { p.photoDataUrl = cache[key]; if (!skipRender) render(); return Promise.resolve(true); }
     return ensurePhotoIndex().then(function(idx) {
       var f = idx[key];
       if (!f) {
         if (!silent) pushNotification('Fotka pro ' + p.jmenoCele + ' nenalezena ve složce "Fotky hráčů" (hledáno jako "' + p.prijmeni + ' ' + p.jmeno + '").', 'warn');
-        return;
+        return false;
       }
       return fetch('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media', { headers: { 'Authorization': 'Bearer ' + accessToken } })
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
@@ -501,10 +504,12 @@
           savePhotoCache(cache);
           p.photoDataUrl = dataUrl;
           if (!silent) pushNotification('Fotka hráče ' + p.jmenoCele + ' byla naimportována.', 'info');
-          render();
+          if (!skipRender) render();
+          return true;
         });
     }).catch(function(err) {
       if (!silent) pushNotification('Import fotky hráče ' + p.jmenoCele + ' selhal: ' + err.message, 'error');
+      return false;
     });
   }
   function avatarInnerHtml(p, size) {
@@ -727,6 +732,91 @@
     return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
   }
 
+  // ---------- "Vyřazené" (players who left the club) ----------
+  // Structurally different from "Seznam": it's an older layout where the checklist item
+  // names live in the row ABOVE the header row (not in the header row itself), and the
+  // checklist itself uses its own older set of item names. Read-only in the app — Petr
+  // moves a player's row into this sheet by hand in Google Sheets when they leave.
+  var VYRAZENE_CHECKLIST_KEYS = ['NSA', 'FAČR', 'PLATBA FAČR', 'ČLEN KLUBU', 'HRÁČ KLUBU', 'PŘIIHLÁŠKA', 'KONTAKT', 'WHATS UP', 'FOTO PC', 'FOTO', 'PLATBA ÚČET', 'PLATBA CASH'];
+  var VYRAZENE_CHECKLIST_LABELS = {
+    'NSA': 'NSA', 'FAČR': 'Registrace FAČR', 'PLATBA FAČR': 'Platba FAČR', 'ČLEN KLUBU': 'Člen klubu',
+    'HRÁČ KLUBU': 'Hráč klubu', 'PŘIIHLÁŠKA': 'Přihláška', 'KONTAKT': 'Kontakt', 'WHATS UP': 'WhatsApp',
+    'FOTO PC': 'Foto (PC)', 'FOTO': 'Foto', 'PLATBA ÚČET': 'Platba (účet)', 'PLATBA CASH': 'Platba (hotovost)'
+  };
+  function parseVyrazeneRoster_(values) {
+    var headerRowIdx = findHeaderRowIndex_(values, 'Příjmení');
+    var header = values[headerRowIdx];
+    var groupRow = headerRowIdx >= 1 ? (values[headerRowIdx - 1] || []) : [];
+    var map = buildColumnMap_(header);
+    var groupMap = buildColumnMap_(groupRow);
+    var zastupceJmenoIdx = findColBySubstring_(header, 'Zákonný zástupce');
+
+    var idx = {
+      prijmeni: col_(map, 'Příjmení'),
+      jmeno: col_(map, 'Jméno', 0),
+      datumVyrazeni: col_(map, 'Datum vyřazení'),
+      rok: col_(map, 'Rok'),
+      kategorie: col_(map, 'Kategorie'),
+      datumNarozeni: col_(map, 'Datum narození (M,D,R)'),
+      vek: col_(map, 'Věk'),
+      pohlavi: col_(map, 'Pohlaví'),
+      adresa: col_(map, 'Adresa'),
+      cp: col_(map, 'čp'),
+      mesto: col_(map, 'Město'),
+      psc: col_(map, 'PSČ'),
+      emailHrac: col_(map, 'E-mail', 0),
+      telefonHrac: col_(map, 'Telefon', 0),
+      id: col_(map, 'ID'),
+      zastupceJmeno: zastupceJmenoIdx,
+      zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
+      zastupceEmail: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 2 : -1,
+      checklistCols: (function() {
+        var m = {};
+        VYRAZENE_CHECKLIST_KEYS.forEach(function(key) { m[key] = col_(groupMap, key); });
+        return m;
+      })()
+    };
+
+    var players = [];
+    for (var r = headerRowIdx + 1; r < values.length; r++) {
+      var row = values[r];
+      var prijmeni = val_(row, idx.prijmeni);
+      var jmeno = val_(row, idx.jmeno);
+      if (!prijmeni && !jmeno) continue;
+
+      var checklist = {};
+      VYRAZENE_CHECKLIST_KEYS.forEach(function(key) {
+        var ci = idx.checklistCols[key];
+        checklist[key] = ci >= 0 ? (row[ci] === true) : false;
+      });
+
+      players.push({
+        sheetRow: r + 1,
+        prijmeni: prijmeni,
+        jmeno: jmeno,
+        jmenoCele: (jmeno + ' ' + prijmeni).trim(),
+        datumVyrazeni: val_(row, idx.datumVyrazeni),
+        rok: val_(row, idx.rok),
+        kategorie: val_(row, idx.kategorie),
+        datumNarozeni: val_(row, idx.datumNarozeni),
+        vek: val_(row, idx.vek),
+        pohlavi: val_(row, idx.pohlavi),
+        ulice: val_(row, idx.adresa), // "Adresa" column here plays the same role as "Ulice" in Seznam
+        cp: val_(row, idx.cp),
+        mesto: val_(row, idx.mesto),
+        psc: val_(row, idx.psc),
+        emailHrac: val_(row, idx.emailHrac),
+        telefonHrac: val_(row, idx.telefonHrac),
+        id: val_(row, idx.id),
+        zastupceJmeno: val_(row, idx.zastupceJmeno),
+        zastupceTelefon: val_(row, idx.zastupceTelefon),
+        zastupceEmail: val_(row, idx.zastupceEmail),
+        checklist: checklist
+      });
+    }
+    return { players: players, colIndex: idx, headerRowIdx: headerRowIdx };
+  }
+
   function parseCategoryRules_(values) {
     if (!values || !values.length) return [];
     var bestCol = -1, bestYear = -1;
@@ -799,7 +889,7 @@
       }
 
       var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID +
-        '/values:batchGet?ranges=Seznam&ranges=Kategorie&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
+        '/values:batchGet?ranges=Seznam&ranges=Kategorie&ranges=' + encodeURIComponent('Vyřazené') + '&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
 
       return fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } })
         .then(function(r) {
@@ -810,6 +900,7 @@
           clearTimeout(slowTimer);
           var seznamValues = (json.valueRanges[0] && json.valueRanges[0].values) || [];
           var kategorieValues = (json.valueRanges[1] && json.valueRanges[1].values) || [];
+          var vyrazeneValues = (json.valueRanges[2] && json.valueRanges[2].values) || [];
 
           var parsed = parseRoster_(seznamValues, 'Seznam');
           var players = parsed.players;
@@ -827,8 +918,21 @@
           var cities = {};
           players.forEach(function (p) { if (p.mesto) cities[p.mesto] = true; });
 
+          var vyrazeni = [];
+          try {
+            var parsedV = parseVyrazeneRoster_(vyrazeneValues);
+            vyrazeni = parsedV.players;
+            vyrazeni.forEach(function(p) {
+              p.categoryGroup = p.kategorie || 'Nezařazeno';
+              p.categoryColor = colorForLabel_(p.categoryGroup);
+            });
+          } catch (e) {
+            // Missing/renamed "Vyřazené" sheet shouldn't break the main roster view.
+          }
+
           DATA = {
             players: players,
+            vyrazeni: vyrazeni,
             categoryRules: rulesWithColor,
             cities: Object.keys(cities).sort(),
             season: 'Seznam hráčů 26/27',
@@ -902,6 +1006,50 @@
   function openSettings() {
     state.view = 'settings';
     render();
+  }
+
+  // ---------- Vyřazení hráči (read-only) ----------
+  function openVyrazeni() {
+    state.view = 'vyrazeni';
+    render();
+  }
+  function renderVyrazeniView() {
+    var players = (DATA.vyrazeni || []).slice().sort(function(a, b) {
+      return (b.datumVyrazeni || '').localeCompare(a.datumVyrazeni || '');
+    });
+    var rows = players.map(function(p) {
+      return '<div class="player-card" onclick="openVyrazeniDetail(' + p.sheetRow + ')">' +
+        '<div class="ring" style="' + ringStyle(0, esc(p.categoryColor)) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
+        '<span class="pc-name">' + esc(p.jmenoCele) + '</span>' +
+        '<span class="pc-birth">Vyřazen<br><b>' + esc(p.datumVyrazeni || '—') + '</b></span>' +
+        '<span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(p.categoryGroup) + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="header"><h1>Vyřazení hráči</h1><div class="count">' + players.length + ' hráčů</div></div>' +
+      '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Přehled hráčů přesunutých v tabulce do listu "Vyřazené". Pouze pro čtení.</div>' +
+      '<div class="player-list">' + (rows || '<div class="loading">Žádní vyřazení hráči.</div>') + '</div>';
+  }
+  function openVyrazeniDetail(sheetRow) {
+    var p = (DATA.vyrazeni || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var checklistRows = VYRAZENE_CHECKLIST_KEYS.map(function(key) {
+      var on = p.checklist[key];
+      var label = VYRAZENE_CHECKLIST_LABELS[key] || key;
+      return '<div class="checklist-row"><span class="cl-label">' + esc(label) + '</span><span class="cl-icon ' + (on ? 'on' : 'off') + '">' + (on ? '&#10003;' : '&#10005;') + '</span></div>';
+    }).join('');
+    var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+    document.getElementById('modalBox').innerHTML =
+      '<h2>' + esc(p.jmenoCele) + (p.id ? ' <span class="detail-id">ID ' + esc(p.id) + '</span>' : '') + '</h2>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">' + esc(p.categoryGroup) + ' · narozen ' + esc(p.datumNarozeni) + (p.vek ? ' · ' + esc(p.vek) + ' let' : '') + ' · vyřazen ' + esc(p.datumVyrazeni) + '</div>' +
+      '<div class="info-row"><span>Telefon hráče</span><span class="info-value">' + (esc(p.telefonHrac) || '—') + '</span></div>' +
+      '<div class="info-row"><span>E-mail hráče</span><span class="info-value">' + (esc(p.emailHrac) || '—') + '</span></div>' +
+      '<div class="info-row"><span>Zástupce</span><span class="info-value">' + (esc(p.zastupceJmeno) || '—') + '</span></div>' +
+      '<div class="info-row"><span>Telefon zástupce</span><span class="info-value">' + (esc(p.zastupceTelefon) || '—') + '</span></div>' +
+      '<div class="info-row"><span>E-mail zástupce</span><span class="info-value">' + (esc(p.zastupceEmail) || '—') + '</span></div>' +
+      '<div class="info-row"><span>Adresa</span><span class="info-value">' + (esc(addressLine) || '—') + '</span></div>' +
+      '<div class="checklist-wrap" style="margin-top:10px;">' + checklistRows + '</div>' +
+      '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
+    document.getElementById('modalOverlay').classList.add('open');
   }
 
   // ---------- Selection mode (for PDF sharing) ----------
@@ -1292,6 +1440,12 @@
           checklistRows +
           '<span class="phase-note">Úprava/přidání položek checklistu přímo v appce bude v další verzi.</span>' +
         '</div>' +
+        '<div class="info-box">' +
+          '<span class="box-title">Fotky hráčů</span>' +
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Jednorázově naimportuje fotky ze složky "Fotky hráčů" na Disku pro všechny hráče, kteří ji ještě nemají. Nově přidaní hráči se pak řeší jednotlivě zaškrtnutím "FOTO PC".</div>' +
+          '<button class="icon-btn toolbar-btn" onclick="bulkImportAllPhotos()">Naimportovat fotky pro všechny hráče</button>' +
+          '<div id="bulkPhotoStatus" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>' +
+        '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title">Import nových hráčů z KIS (XLS export)</span>' +
           '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Jméno, příjmení, datum narození, adresa, kontakty hráče i rodiče se přenesou automaticky; nový hráč dostane v checklistu zaškrtnutou jen položku "Registrace KIS".</div>' +
@@ -1304,6 +1458,76 @@
   function wireSettingsView() {
     var fileInput = document.getElementById('importFileInput');
     if (fileInput) fileInput.addEventListener('change', handleImportFile);
+  }
+
+  // One-time backfill: import a photo for every current player who doesn't have one
+  // cached yet, then mark "FOTO PC" for whoever was found in a single batched write
+  // (not one write per player). Newly added players going forward are handled
+  // individually via toggleChecklistItem when "FOTO PC" is checked.
+  function bulkImportAllPhotos() {
+    if (!DATA || DATA.role !== 'admin') return;
+    var statusEl = document.getElementById('bulkPhotoStatus');
+    var players = DATA.players;
+    var total = players.length;
+    var done = 0, found = 0, alreadyHad = 0, notFound = 0;
+    var toMark = [];
+    function updateStatus() {
+      if (statusEl) statusEl.textContent = 'Importuji fotky… ' + done + '/' + total + ' (nově nalezeno ' + found + ', nenalezeno ' + notFound + ')';
+    }
+    updateStatus();
+    ensurePhotoIndex().then(function() {
+      return new Promise(function(resolveAll) {
+        var CONCURRENCY = 5;
+        var nextIndex = 0;
+        function worker() {
+          var i = nextIndex++;
+          if (i >= players.length) { if (done >= players.length) resolveAll(); return; }
+          var p = players[i];
+          if (p.photoDataUrl) {
+            done++; alreadyHad++; updateStatus(); worker();
+            return;
+          }
+          importPlayerPhoto(p, true, true).then(function(gotPhoto) {
+            done++;
+            if (gotPhoto) {
+              found++;
+              if (!p.checklist['FOTO PC']) {
+                var colIdx = DATA.colIndex.checklistCols ? DATA.colIndex.checklistCols['FOTO PC'] : -1;
+                if (colIdx != null && colIdx >= 0) {
+                  toMark.push('Seznam!' + colIndexToLetter(colIdx) + p.sheetRow);
+                  p.checklist['FOTO PC'] = true;
+                }
+              }
+            } else {
+              notFound++;
+            }
+            updateStatus();
+            worker();
+          });
+        }
+        for (var w = 0; w < Math.min(CONCURRENCY, players.length); w++) worker();
+      });
+    }).then(function() {
+      if (!toMark.length) {
+        if (statusEl) statusEl.textContent = 'Hotovo. Nově naimportováno ' + found + ' fotek, ' + alreadyHad + ' už bylo dřív, ' + notFound + ' nenalezeno.';
+        pushNotification('Hromadný import fotek dokončen: ' + found + ' nových, ' + notFound + ' nenalezeno.', found ? 'info' : 'warn');
+        return;
+      }
+      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: toMark.map(function(range) { return { range: range, values: [[true]] }; }) })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+        return r.json();
+      }).then(function() {
+        if (statusEl) statusEl.textContent = 'Hotovo. Nově naimportováno ' + found + ' fotek (checklist "FOTO PC" označen), ' + alreadyHad + ' už bylo dřív, ' + notFound + ' nenalezeno.';
+        pushNotification('Hromadný import fotek dokončen: ' + found + ' nových (checklist aktualizován), ' + notFound + ' nenalezeno.', 'info');
+      });
+    }).catch(function(err) {
+      if (statusEl) statusEl.textContent = 'Import selhal: ' + err.message;
+      pushNotification('Hromadný import fotek selhal: ' + err.message, 'error');
+    });
   }
 
   function handleImportFile(e) {
@@ -1532,6 +1756,7 @@
     if (state.view === 'detail') { main.innerHTML = renderDetailView(); }
     else if (state.view === 'map') { main.innerHTML = renderMapView(); }
     else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
+    else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
     else { main.innerHTML = renderListView(); }
 
     // Note: the Filtr/Sdílet dropdown panels are deliberately NOT re-rendered here on every
