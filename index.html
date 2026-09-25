@@ -30,6 +30,7 @@
     .filter-panel-inner input, .filter-panel-inner select { width: 100%; }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; }
     .cat-item.active { background: rgba(0,255,255,0.1); border-color: var(--accent); color: var(--text); }
+    .cat-item[data-cat="__vyrazeni__"] { margin-top: 8px; padding-top: 11px; border-top: 1px solid var(--border); border-radius: 0; }
     .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
     .role-badge { margin-top: auto; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .role-badge button { background: none; border: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-family: inherit; font-size: 11px; padding: 0; }
@@ -169,6 +170,7 @@
       .cat-list { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
       .cat-item { white-space: nowrap; flex-shrink: 0; border-radius: 999px; padding: 8px 14px; border: 1px solid var(--border); background: var(--card); }
       .cat-item.active { background: rgba(0,255,255,0.13); border-color: var(--accent); }
+      .cat-item[data-cat="__vyrazeni__"] { margin-top: 0; padding-top: 8px; border-top: 1px solid var(--border); border-radius: 999px; margin-left: 6px; }
       .role-badge { display: none; }
       .main { padding: 14px 12px; }
       .header h1 { font-size: 17px; }
@@ -208,9 +210,6 @@
           </button>
           <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-          </button>
-          <button class="icon-btn" type="button" onclick="openVyrazeni()" aria-label="Vyřazení hráči" title="Vyřazení hráči">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
           </button>
           <div style="position:relative;">
             <button class="icon-btn" type="button" onclick="toggleNotifications()" aria-label="Notifikace" title="Notifikace">
@@ -2134,11 +2133,13 @@
       return '<div class="cat-item' + (state.categories.indexOf(r.label) !== -1 ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
         '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
+    html += '<div class="cat-item" data-cat="__vyrazeni__"><span class="dot" style="background:#5a6169"></span>Vyřazení hráči</div>';
     var el = document.getElementById('catList');
     el.innerHTML = html;
     Array.prototype.forEach.call(el.children, function(child) {
       child.addEventListener('click', function() {
         var cat = child.getAttribute('data-cat');
+        if (cat === '__vyrazeni__') { openVyrazeni(); return; }
         if (cat === 'Vše') {
           state.categories = [];
         } else {
