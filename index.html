@@ -2065,8 +2065,8 @@
             (p.vek ? '<span class="meta-sep">·</span><span>' + esc(p.vek) + ' let</span>' : '') +
           '</div>' +
           '<div class="detail-progress-wrap">' +
-            '<div class="detail-progress-bar"><div class="detail-progress-fill" style="width:' + pct + '%"></div></div>' +
-            '<span class="detail-progress-label">' + c.done + '/' + c.total + ' kroků hotovo</span>' +
+            '<div class="detail-progress-bar"><div class="detail-progress-fill" style="width:' + pct + '%;background:' + esc(p.categoryColor) + '"></div></div>' +
+            '<span class="detail-progress-label" style="color:' + esc(p.categoryColor) + '">' + c.done + '/' + c.total + ' kroků hotovo</span>' +
           '</div>' +
         '</div>' +
       '</div>' +
