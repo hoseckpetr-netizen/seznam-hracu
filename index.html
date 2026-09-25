@@ -22,8 +22,8 @@
     .icon-btn:disabled { opacity: .45; cursor: default; }
     .season { font-size: 11px; color: var(--muted); }
     .cat-list { display: flex; flex-direction: column; gap: 2px; }
-    .sidebar-tools { display: flex; gap: 8px; }
-    .sidebar-tools .toolbar-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .sidebar-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sidebar-tools .toolbar-btn { flex: 1 1 calc(50% - 4px); min-width: 90px; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .notif-panel .notif-row.clickable { cursor: pointer; }
     .notif-panel .notif-row.clickable:hover { background: rgba(0,255,255,0.08); }
     .filter-panel-inner { padding: 10px; display: flex; flex-direction: column; gap: 7px; }
@@ -284,6 +284,14 @@
           </button>
           <div id="filterPanel" class="notif-panel" style="width:264px;"></div>
         </div>
+        <button class="icon-btn toolbar-btn" type="button" onclick="resetSidebarFilters()" aria-label="Zrušit filtr" title="Zrušit filtr">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          Zrušit filtr
+        </button>
+        <button class="icon-btn toolbar-btn" type="button" onclick="refreshAppData()" aria-label="Aktualizovat" title="Aktualizovat data i fotky">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          Aktualizovat
+        </button>
       </div>
       <div class="role-badge" id="roleBadge"></div>
     </div>
@@ -1129,7 +1137,18 @@
   }
 
   // ---------- Data loading (Sheets API v4, direct from browser) ----------
-  function loadData() {
+  // Manual refresh (toolbar button): re-fetches the sheet AND forces the Drive "Fotky hráčů"
+  // folder listing to be re-read, instead of reusing whatever was cached in memory from page
+  // load. Without the photoIndex reset, a photo added to Drive *after* this tab was opened
+  // would never be found until a full page reload — which also throws away the sign-in and
+  // makes the person log in again. This does neither: the access token stays valid, so it's
+  // just a normal re-fetch.
+  function refreshAppData() {
+    photoIndex = null;
+    photoIndexPromise = null;
+    loadData(true);
+  }
+  function loadData(isManualRefresh) {
     document.getElementById('main').innerHTML = '<div class="loading">Načítám data ze Sheetu…</div>';
     var slowTimer = setTimeout(function() {
       var el = document.getElementById('main');
@@ -1246,12 +1265,13 @@
           renderCatList();
           render();
           autoImportMissingPhotos();
+          if (isManualRefresh) pushNotification('Data i fotky byly aktualizovány.', 'info');
         });
     }).catch(function(err) {
       clearTimeout(slowTimer);
       document.getElementById('main').innerHTML = '<div class="loading">Chyba: ' + esc(err.message) + '<br><br><button id="retryBtn" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:13px;cursor:pointer;">Zkusit znovu</button></div>';
       var btn = document.getElementById('retryBtn');
-      if (btn) { btn.addEventListener('click', loadData); }
+      if (btn) { btn.addEventListener('click', function() { loadData(); }); }
     });
   }
 
