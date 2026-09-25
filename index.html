@@ -2545,7 +2545,10 @@
     ['sharePanel', 'filterPanel'].forEach(function(id) {
       var panel = document.getElementById(id);
       if (!panel || panel.style.display !== 'block') return;
-      var isTriggerBtn = e.target.closest && e.target.closest('[onclick*="toggleSidebarPanel"]');
+      // focusSearch() (the magnifying-glass icon) also opens the Filtr panel, on the same
+      // click — without recognizing it here too, this handler saw that click as "outside"
+      // the panel and closed it again immediately, undoing the open on the very same click.
+      var isTriggerBtn = e.target.closest && e.target.closest('[onclick*="toggleSidebarPanel"], [onclick="focusSearch()"]');
       if (!panel.contains(e.target) && !isTriggerBtn) panel.style.display = 'none';
     });
   });
