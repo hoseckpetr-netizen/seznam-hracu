@@ -1442,22 +1442,23 @@
 
   // ---------- Seřadit (sort) ----------
   // A separate concern from filtering above — it never removes players, only reorders them.
-  // "Podle kategorie" sorts by each category's own "Ročník od" (birth-year lower bound) rather
-  // than alphabetically, so U8/U9/U10/… come out in an actual age order instead of text order
-  // (categories without a year range, e.g. "Muži"/"Nezařazeno", sort to the end either way).
+  // "Podle kategorie" sorts young → old by the U-number in the category code (U7, U8, U9, …)
+  // rather than alphabetically or by birth year — this also drives the fixed ascending order
+  // of the category chips above the list (renderCatList) and is shared with it. A category with
+  // no U-number (e.g. "Muži", "Nezařazeno") always sorts last, in both directions.
   function checklistFraction_(p) {
     var c = checklistCounts(p);
     return c.total ? (c.done / c.total) : 0;
   }
-  function categorySortWeight_(label) {
-    var rule = (DATA.categoryRules || []).find(function(r) { return r.label === label; });
-    return (rule && rule.from != null) ? rule.from : 99999;
+  function categoryOrderWeight_(label) {
+    var m = /^U(\d+)/i.exec((label || '').toString().trim());
+    return m ? parseInt(m[1], 10) : 9999;
   }
   function sortComparator_(key) {
     if (key === 'vek') return function(a, b) { return (parseFloat(a.vek) || 0) - (parseFloat(b.vek) || 0); };
     if (key === 'checklist') return function(a, b) { return checklistFraction_(a) - checklistFraction_(b); };
     if (key === 'kategorie') return function(a, b) {
-      return categorySortWeight_(a.categoryGroup) - categorySortWeight_(b.categoryGroup) ||
+      return categoryOrderWeight_(a.categoryGroup) - categoryOrderWeight_(b.categoryGroup) ||
         (a.categoryGroup || '').localeCompare(b.categoryGroup || '', 'cs');
     };
     if (key === 'prijmeni') return function(a, b) { return (a.prijmeni || '').localeCompare(b.prijmeni || '', 'cs', { sensitivity: 'base' }); };
@@ -3259,7 +3260,9 @@
     // "Vše" is active exactly when nothing else is selected; every other chip can be
     // toggled on/off independently, so several categories (e.g. U11 + U12) can show at once.
     var html = '<div class="cat-item' + (state.categories.length === 0 ? ' active' : '') + '" data-cat="Vše"><span class="dot" style="background:#5a6169"></span>Vše</div>';
-    html += DATA.categoryRules.filter(function (r) { return !r.hideFilter; }).map(function (r) {
+    html += DATA.categoryRules.filter(function (r) { return !r.hideFilter; }).slice().sort(function(a, b) {
+      return categoryOrderWeight_(a.label) - categoryOrderWeight_(b.label) || (a.label || '').localeCompare(b.label || '', 'cs');
+    }).map(function (r) {
       return '<div class="cat-item' + (state.categories.indexOf(r.label) !== -1 ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
         '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
