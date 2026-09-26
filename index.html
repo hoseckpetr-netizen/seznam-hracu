@@ -176,8 +176,12 @@
     .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
     .form-row label { font-size: 11px; color: var(--muted); }
     .form-row input, .form-row select { background: #12151a; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
-    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
     .modal-actions button { width: auto; padding: 9px 16px; font-size: 13px; font-family: inherit; }
+    .share-fields-grid { display: flex; flex-direction: column; gap: 2px; }
+    .share-field-row { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 7px 2px; border-bottom: 1px solid #20242a; cursor: pointer; }
+    .share-field-row:last-child { border-bottom: none; }
+    .share-field-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
     .diff-summary { font-size: 12px; background: #12151a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
     .diff-summary div { padding: 2px 0; }
     .diff-summary b { color: var(--accent); }
@@ -829,15 +833,14 @@
     panelEl.style.right = 'auto';
   }
   function shareCurrentCategoryPDF() {
-    selectAllFiltered();
-    sharePlayersPDF();
+    openShareOptionsModal_(filteredPlayers());
   }
   function renderSharePanel() {
     var el = document.getElementById('sharePanel');
     if (!el || !DATA) return;
     el.innerHTML =
-      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); toggleSelectMode();"><span class="notif-text">Vybrat hráče a sdílet jako PDF</span></div>' +
-      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); shareCurrentCategoryPDF();"><span class="notif-text">Sdílet aktuální výběr kategorie/filtru jako PDF (' + filteredPlayers().length + ')</span></div>';
+      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); toggleSelectMode();"><span class="notif-text">Vybrat hráče a sdílet</span></div>' +
+      '<div class="notif-row clickable" onclick="toggleSidebarPanel(\'share\'); shareCurrentCategoryPDF();"><span class="notif-text">Sdílet aktuální výběr/filtr (' + filteredPlayers().length + ')</span></div>';
   }
   function renderFilterPanel() {
     var el = document.getElementById('filterPanel');
@@ -1649,54 +1652,134 @@
     return DATA.players.filter(function(p) { return !!state.selected[p.sheetRow]; });
   }
 
-  // ---------- Sharing as PDF (uses the browser's own print-to-PDF, no library needed) ----------
-  function sharePlayersPDF() {
-    var players = selectedPlayers();
-    if (!players.length) return;
-    var title = state.categories.length ? ('Soupiska: ' + state.categories.map(displayCategoryLabel).join(', ')) : 'Soupiska hráčů';
-    var rows = players.map(function(p, i) {
-      return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.jmenoCele) + '</td><td>' + esc(p.categoryGroup) + '</td><td>' + esc(p.rok) + '</td><td>' + esc(p.datumNarozeni) + '</td><td>' + esc(p.mesto) + '</td></tr>';
+  // ---------- Sharing (PDF via browser print, or plain-text copy) with a choice of which
+  // fields to include — Jméno is always included; everything else is opt-in via checkboxes,
+  // remembered in localStorage so the choice doesn't have to be repeated every time. ----------
+  var SHARE_FIELD_DEFS = [
+    { key: 'kategorie', label: 'Kategorie a ročník' },
+    { key: 'datumNarozeni', label: 'Datum narození a věk' },
+    { key: 'adresa', label: 'Adresa' },
+    { key: 'id', label: 'FAČR ID' },
+    { key: 'rodneCislo', label: 'Rodné číslo' },
+    { key: 'telefonHrac', label: 'Telefon hráče' },
+    { key: 'emailHrac', label: 'E-mail hráče' },
+    { key: 'zastupce', label: 'Zákonný zástupce (jméno, telefon, e-mail)' },
+    { key: 'checklist', label: 'Stav registračního checklistu' }
+  ];
+  var DEFAULT_SHARE_FIELDS = { kategorie: true, datumNarozeni: true, adresa: true, id: false, rodneCislo: false, telefonHrac: false, emailHrac: false, zastupce: false, checklist: false };
+  var SHARE_FIELDS_STATE_KEY = 'fks_share_fields_v1';
+  var shareModalPlayers_ = [];
+
+  function loadShareFieldsState_() {
+    var out = {};
+    for (var k in DEFAULT_SHARE_FIELDS) out[k] = DEFAULT_SHARE_FIELDS[k];
+    try {
+      var saved = JSON.parse(localStorage.getItem(SHARE_FIELDS_STATE_KEY) || '{}');
+      for (var k2 in saved) if (out.hasOwnProperty(k2)) out[k2] = !!saved[k2];
+    } catch (e) {}
+    return out;
+  }
+  function saveShareFieldsState_(map) { try { localStorage.setItem(SHARE_FIELDS_STATE_KEY, JSON.stringify(map)); } catch (e) {} }
+
+  function addressLine_(p) {
+    return [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+  }
+
+  function openShareOptionsModal_(players) {
+    if (!players || !players.length) { pushNotification('Nejsou vybraní žádní hráči ke sdílení.', 'warn'); return; }
+    shareModalPlayers_ = players;
+    var title = players.length === 1 ? ('Sdílet hráče: ' + players[0].jmenoCele) : ('Sdílet hráče (' + players.length + ')');
+    document.getElementById('modalBox').innerHTML =
+      '<h2>' + esc(title) + '</h2>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Jméno se sdílí vždy. Zaškrtněte, co dalšího se má zahrnout:</div>' +
+      '<div id="shareFieldsGrid" class="share-fields-grid"></div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="confirmShareCopyText_()">Zkopírovat text</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="confirmSharePDF_()">PDF</button>' +
+      '</div>';
+    renderShareFieldsGrid_();
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+  function renderShareFieldsGrid_() {
+    var el = document.getElementById('shareFieldsGrid');
+    if (!el) return;
+    var fields = loadShareFieldsState_();
+    el.innerHTML = SHARE_FIELD_DEFS.map(function(f) {
+      return '<label class="share-field-row"><input type="checkbox" onchange="toggleShareField_(\'' + f.key + '\', this.checked)"' + (fields[f.key] ? ' checked' : '') + '> ' + esc(f.label) + '</label>';
     }).join('');
-    var html = '<h1>FK Slovany Pardubice</h1>' +
-      '<div class="meta">' + esc(title) + ' · vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + ' · ' + players.length + ' hráčů</div>' +
-      '<table><thead><tr><th>Č.</th><th>Jméno</th><th>Kategorie</th><th>Ročník</th><th>Datum narození</th><th>Obec</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  function toggleShareField_(key, checked) {
+    var fields = loadShareFieldsState_();
+    fields[key] = !!checked;
+    saveShareFieldsState_(fields);
+  }
+
+  function playerShareValues_(p, fields) {
+    var parts = [];
+    if (fields.kategorie) parts.push({ label: 'Kategorie', value: p.categoryGroup + (p.kategorie ? ' (' + p.kategorie + ')' : '') + (p.rok ? ' · ročník ' + p.rok : '') });
+    if (fields.datumNarozeni) parts.push({ label: 'Datum narození', value: p.datumNarozeni + (p.vek ? ' (' + p.vek + ' let)' : '') });
+    if (fields.adresa) parts.push({ label: 'Adresa', value: addressLine_(p) || '—' });
+    if (fields.id) parts.push({ label: 'FAČR ID', value: p.id || '—' });
+    if (fields.rodneCislo) parts.push({ label: 'Rodné číslo', value: formatRodneCislo_(p.rodneCislo) || '—' });
+    if (fields.telefonHrac) parts.push({ label: 'Telefon hráče', value: p.telefonHrac || '—' });
+    if (fields.emailHrac) parts.push({ label: 'E-mail hráče', value: p.emailHrac || '—' });
+    if (fields.zastupce) parts.push({ label: 'Zákonný zástupce', value: [p.zastupceJmeno, p.zastupceTelefon, p.zastupceEmail].filter(Boolean).join(', ') || '—' });
+    if (fields.checklist) { var c = checklistCounts(p); parts.push({ label: 'Checklist', value: c.done + '/' + c.total + ' hotovo' }); }
+    return parts;
+  }
+
+  function confirmSharePDF_() {
+    var players = shareModalPlayers_;
+    var fields = loadShareFieldsState_();
+    closeModal();
+    var html;
+    if (players.length === 1) {
+      var p = players[0];
+      var rows = playerShareValues_(p, fields).map(function(row) {
+        return '<tr><td><b>' + esc(row.label) + '</b></td><td>' + esc(row.value) + '</td></tr>';
+      }).join('');
+      html = '<h1>FK Slovany Pardubice — Karta hráče</h1>' +
+        '<div class="meta">Vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + '</div>' +
+        '<table><tbody><tr><td><b>Jméno</b></td><td>' + esc(p.jmenoCele) + '</td></tr>' + rows + '</tbody></table>';
+    } else {
+      var activeDefs = SHARE_FIELD_DEFS.filter(function(f) { return fields[f.key]; });
+      var head = '<th>Č.</th><th>Jméno</th>' + activeDefs.map(function(f) { return '<th>' + esc(f.label) + '</th>'; }).join('');
+      var rowsHtml = players.map(function(p, i) {
+        var values = playerShareValues_(p, fields);
+        var cells = activeDefs.map(function(f) {
+          var v = values.find(function(row) { return row.label === f.label; });
+          return '<td>' + esc(v ? v.value : '—') + '</td>';
+        }).join('');
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.jmenoCele) + '</td>' + cells + '</tr>';
+      }).join('');
+      var title = state.categories.length ? ('Soupiska: ' + state.categories.map(displayCategoryLabel).join(', ')) : 'Soupiska hráčů';
+      html = '<h1>FK Slovany Pardubice</h1>' +
+        '<div class="meta">' + esc(title) + ' · vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + ' · ' + players.length + ' hráčů</div>' +
+        '<table><thead><tr>' + head + '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+    }
     document.getElementById('printArea').innerHTML = html;
     window.print();
   }
 
-  function sharePlayerCardPDF() {
-    var p = DATA.players.find(function(x) { return x.sheetRow === state.selectedRow; });
-    if (!p) return;
-    var c = checklistCounts(p);
-    var checklistRows = activeChecklistKeys(p).map(function(key) {
-      var label = CHECKLIST_LABELS[key] || key;
-      var dateStr = (CHECKLIST_DATE_KEYS.indexOf(key) !== -1 && p.checklistDates && p.checklistDates[key]) ? ' (' + esc(p.checklistDates[key]) + ')' : '';
-      return '<tr><td>' + esc(label) + '</td><td>' + (p.checklist[key] ? 'Ano' + dateStr : 'Ne') + '</td></tr>';
-    }).join('');
-    var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
-    var html = '<h1>FK Slovany Pardubice — Karta hráče</h1>' +
-      '<div class="meta">Vygenerováno ' + new Date().toLocaleDateString('cs-CZ') + '</div>' +
-      '<table><tbody>' +
-        '<tr><td><b>Jméno</b></td><td>' + esc(p.jmenoCele) + '</td></tr>' +
-        '<tr><td><b>Kategorie</b></td><td>' + esc(p.categoryGroup) + ' (' + esc(p.kategorie) + ')</td></tr>' +
-        '<tr><td><b>Ročník</b></td><td>' + esc(p.rok) + '</td></tr>' +
-        '<tr><td><b>Datum narození</b></td><td>' + esc(p.datumNarozeni) + (p.vek ? ' (' + esc(p.vek) + ' let)' : '') + '</td></tr>' +
-        '<tr><td><b>FAČR ID</b></td><td>' + (esc(p.id) || '—') + '</td></tr>' +
-        '<tr><td><b>Adresa</b></td><td>' + (esc(addressLine) || '—') + '</td></tr>' +
-        '<tr><td><b>Telefon hráče</b></td><td>' + (esc(p.telefonHrac) || '—') + '</td></tr>' +
-        '<tr><td><b>E-mail hráče</b></td><td>' + (esc(p.emailHrac) || '—') + '</td></tr>' +
-        '<tr><td><b>Zákonný zástupce</b></td><td>' + (esc(p.zastupceJmeno) || '—') + '</td></tr>' +
-        '<tr><td><b>Telefon zástupce</b></td><td>' + (esc(p.zastupceTelefon) || '—') + '</td></tr>' +
-        '<tr><td><b>E-mail zástupce</b></td><td>' + (esc(p.zastupceEmail) || '—') + '</td></tr>' +
-        ((p.zastupce2Jmeno || p.zastupce2Telefon || p.zastupce2Email) ?
-          '<tr><td><b>2. zákonný zástupce</b></td><td>' + (esc(p.zastupce2Jmeno) || '—') + '</td></tr>' +
-          '<tr><td><b>Telefon 2. zástupce</b></td><td>' + (esc(p.zastupce2Telefon) || '—') + '</td></tr>' +
-          '<tr><td><b>E-mail 2. zástupce</b></td><td>' + (esc(p.zastupce2Email) || '—') + '</td></tr>' : '') +
-      '</tbody></table>' +
-      '<h2>Registrační checklist (' + c.done + '/' + c.total + ')</h2>' +
-      '<table><thead><tr><th>Položka</th><th>Splněno</th></tr></thead><tbody>' + checklistRows + '</tbody></table>';
-    document.getElementById('printArea').innerHTML = html;
-    window.print();
+  function confirmShareCopyText_() {
+    var players = shareModalPlayers_;
+    var fields = loadShareFieldsState_();
+    closeModal();
+    var multi = players.length > 1;
+    var blocks = players.map(function(p, i) {
+      var values = playerShareValues_(p, fields);
+      var lines = values.map(function(row) { return '  ' + row.label + ': ' + row.value; });
+      return (multi ? (i + 1) + '. ' : '') + p.jmenoCele + (lines.length ? '\n' + lines.join('\n') : '');
+    });
+    var header = 'FK Slovany Pardubice' + (multi ? ' — Soupiska (' + players.length + ' hráčů)' : ' — Karta hráče') + ' · ' + new Date().toLocaleDateString('cs-CZ');
+    var text = header + '\n\n' + blocks.join('\n\n');
+    function done() { pushNotification('Text zkopírován do schránky (' + players.length + (players.length === 1 ? ' hráč' : ' hráčů') + ').', 'info'); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text); done();
+    }
   }
 
   // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
@@ -3120,7 +3203,7 @@
       ('<div class="filters" style="align-items:center;">' +
         '<button class="icon-btn toolbar-btn" onclick="selectAllFiltered()">Vybrat vše (' + players.length + ')</button>' +
         '<button class="icon-btn toolbar-btn" onclick="clearSelection()">Zrušit výběr</button>' +
-        '<button class="icon-btn toolbar-btn" onclick="sharePlayersPDF()"' + (selCount ? '' : ' disabled') + '>Sdílet jako PDF</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_(selectedPlayers())"' + (selCount ? '' : ' disabled') + '>Sdílet</button>' +
         '<span class="sel-count">Vybráno: ' + selCount + '</span>' +
         '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()" style="margin-left:auto;">Hotovo</button>' +
       '</div>') : '';
@@ -3163,7 +3246,7 @@
         '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
         '<div style="display:flex;gap:8px;">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
-          '<button class="icon-btn toolbar-btn" onclick="sharePlayerCardPDF()">Sdílet kartu (PDF)</button>' +
+          '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
         '</div>' +
       '</div>' +
       '<div class="detail-head">' +
