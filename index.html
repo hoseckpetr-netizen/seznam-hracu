@@ -498,6 +498,42 @@
     ensureTokenClient().requestAccessToken({ prompt: 'select_account' });
   }
 
+  // ---------- Silent re-sign-in on page load ----------
+  // A GIS access token never survives a reload (that's by design — this is a pure client-side
+  // app with no server to hold a refresh token), so every deploy/reload used to force a manual
+  // "Přihlásit se přes Google" click + account picker. But if the browser still has an active
+  // Google session AND has already granted this app's scopes once, GIS can silently reissue a
+  // fresh access token with no popup and no click at all (prompt: '') — this tries that
+  // automatically as soon as the page loads, and only falls back to the visible "Přihlásit se"
+  // button (already the default state) if the silent attempt doesn't succeed within a few
+  // seconds. Passing the last signed-in e-mail as a "hint" makes this reliable even when the
+  // browser has more than one Google account signed in.
+  var LAST_EMAIL_KEY = 'fks_last_signed_in_email';
+  function trySilentSignIn_() {
+    var savedEmail = null;
+    try { savedEmail = localStorage.getItem(LAST_EMAIL_KEY) || null; } catch (e) {}
+    var attempts = 0;
+    function attempt() {
+      attempts++;
+      if (gisReady()) {
+        var req = { prompt: '' };
+        if (savedEmail) req.hint = savedEmail;
+        req.callback = function(resp) {
+          if (resp && resp.access_token) {
+            accessToken = resp.access_token;
+            afterSignIn();
+          }
+          // Silent failure is routine (no active session, consent not yet granted, third-party
+          // cookies blocked, …) — say nothing and just leave the normal sign-in screen up.
+        };
+        ensureTokenClient().requestAccessToken(req);
+      } else if (attempts < 40) {
+        setTimeout(attempt, 150); // GIS's own <script> tag is async/defer, so it may not be ready yet.
+      }
+    }
+    attempt();
+  }
+
   function signOut() {
     if (accessToken && window.google && google.accounts && google.accounts.oauth2) {
       google.accounts.oauth2.revoke(accessToken, function() {});
@@ -1339,6 +1375,11 @@
     }).then(function(r) { return r.json(); }).then(function(userinfo) {
       var email = (userinfo.email || '').toLowerCase();
       var role = ADMIN_EMAILS.indexOf(email) !== -1 ? 'admin' : (VIEWER_EMAILS.indexOf(email) !== -1 ? 'viewer' : null);
+      if (role) {
+        // Remembered purely as a "hint" for next time's silent sign-in attempt — never sent
+        // anywhere except back to Google's own sign-in endpoint.
+        try { localStorage.setItem(LAST_EMAIL_KEY, email); } catch (e) {}
+      }
       if (!role) {
         clearTimeout(slowTimer);
         document.getElementById('main').innerHTML = '<div class="loading">Přístup odepřen.<br>Účet ' + esc(email) + ' nemá k appce přístup. Pokud si myslíte, že jde o omyl, napište Petrovi.<br><br><button id="signoutBtn" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:13px;cursor:pointer;">Odhlásit a zkusit jiný účet</button></div>';
@@ -3591,6 +3632,9 @@
     });
     el.value = selected;
   }
+
+  // Try to skip the manual sign-in click on every load — see trySilentSignIn_ above.
+  trySilentSignIn_();
 </script>
 </body>
 </html>
