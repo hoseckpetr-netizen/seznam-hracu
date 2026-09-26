@@ -1451,7 +1451,11 @@
     return c.total ? (c.done / c.total) : 0;
   }
   function categoryOrderWeight_(label) {
-    var m = /^U(\d+)/i.exec((label || '').toString().trim());
+    var s = (label || '').toString().trim();
+    // "Minipřípravka" is the youngest category and has no "U<number>" in its name — it must
+    // still sort before U9, not fall into the same "unranked" bucket as "Muži" at the very end.
+    if (/^mini/i.test(s)) return 0;
+    var m = /^U(\d+)/i.exec(s);
     return m ? parseInt(m[1], 10) : 9999;
   }
   function sortComparator_(key) {
