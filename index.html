@@ -3664,10 +3664,13 @@
   }
 
   // Tracks what was last rendered into #main so a genuine navigation (list → detail, list →
-  // settings, one player's card → another's, …) can snap the scroll position back to the top —
-  // otherwise #main (which scrolls, not the page) keeps whatever scrollTop the previous view
-  // was left at, so opening a player near the bottom of a long, scrolled-down list opened their
-  // card already scrolled down too, instead of at the top.
+  // settings, one player's card → another's, …) can snap the scroll position back to the top.
+  // #main has overflow-y:auto, but its parent .app only sets min-height:100vh (not a fixed
+  // height) — so .main's own box simply grows to fit tall content instead of clipping it, and
+  // .main's overflow never actually engages. It's the real page (window/documentElement) that
+  // scrolls, on both mobile and desktop. Resetting main.scrollTop alone was a no-op; that's why
+  // opening a player far down a long, scrolled-down list opened their card already scrolled
+  // down instead of at the top — the fix has to reset the actual window scroll position.
   var lastRenderKey = null;
   function render() {
     var main = document.getElementById('main');
@@ -3689,11 +3692,18 @@
     else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
     else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
     else { main.innerHTML = renderListView(); }
-    // Must run AFTER the innerHTML swap above, not before: #main keeps its old scrollTop across
-    // an innerHTML replacement (the browser only clamps it to the new content's height, it
-    // doesn't zero it), which is exactly what made a detail card open already scrolled down
-    // when it was opened from far down a long, scrolled list.
-    if (isNavigation) main.scrollTop = 0;
+    // Must run AFTER the innerHTML swap above, not before: an old scroll position survives an
+    // innerHTML replacement (the browser only clamps it to the new content's height, it doesn't
+    // zero it). Reset both #main's own scrollTop (harmless if it's never actually the scroller)
+    // and the real page scroll (window/documentElement/body — whichever the browser is actually
+    // using; they're cheap no-ops when not applicable) so navigating always lands at the top
+    // regardless of which element ends up doing the scrolling.
+    if (isNavigation) {
+      main.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      window.scrollTo(0, 0);
+    }
 
     // Sdílet/Filtr/Zrušit filtr/Aktualizovat and the category chips only make sense against
     // the player list — hide them on the player detail card and on Nastavení (and close any
