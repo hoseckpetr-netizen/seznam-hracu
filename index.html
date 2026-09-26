@@ -4,6 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Seznam hráčů – FK Slovany Pardubice</title>
+  <!-- Installable-app support (Android/Chrome "Instalovat aplikaci"). Deliberately no
+       apple-mobile-web-app-capable meta tag: on iOS, adding that would make "Přidat na
+       plochu" launch as an isolated standalone WKWebView with its own separate storage/
+       cookies from Safari, which breaks Google Sign-In / silent re-auth there. Without it,
+       an iOS home-screen icon still gets a nice touch icon but opens as a normal Safari
+       tab, sharing the regular Safari session — Google Sign-In just works. -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b0d10">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
