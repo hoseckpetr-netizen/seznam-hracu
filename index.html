@@ -319,7 +319,7 @@
   // drive.readonly is needed to list/show player photos from the "Fotky hráčů" folder.
   // contacts is needed for the "Noví uživatelé" import flow, which creates a Google Contact
   // for the new player and their guardian (under whichever account approves the import).
-  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts';
+  var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
   // For Radek (fkslovany@gmail.com, viewer role) to see photos too, this folder needs to
@@ -1367,6 +1367,12 @@
 
           document.getElementById('season').textContent = DATA.season;
           document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()">Odhlásit</button>';
+          // Fetched separately (not in the main batchGet above) so a missing/not-yet-created
+          // "Email" tab can never break the main roster load — it just falls back to a default.
+          fetchEmailTemplate_().then(function(tmpl) {
+            DATA.emailTemplate = tmpl;
+            if (state.view === 'settings') render();
+          });
           applyCachedPhotosToRoster();
           renderCatList();
           render();
@@ -2194,6 +2200,8 @@
     var iconList = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11"></path><path d="M9 12h11"></path><path d="M9 18h11"></path><path d="M4 6h.01"></path><path d="M4 12h.01"></path><path d="M4 18h.01"></path></svg>';
     var iconCamera = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
     var iconUpload = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>';
+    var iconMail = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="m22 6-10 7L2 6"></path></svg>';
+    var emailTmpl = (DATA.emailTemplate) || DEFAULT_EMAIL_TEMPLATE;
 
     return '<div class="header"><h1>Nastavení</h1></div>' +
       '<div class="settings-sub">Správa kategorií, checklistu, fotek a importu nových hráčů.</div>' +
@@ -2234,6 +2242,18 @@
           '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Záznamy se přidají do fronty "Noví uživatelé" níže — nic se nezapíše do tabulky, dokud je jednotlivě neschválíte.</div>' +
           '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
           '<div id="importPreview" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>' +
+        '</div>' +
+        '<div class="info-box" style="min-width:100%;">' +
+          '<span class="box-title box-head">' + iconMail + '<span>Šablona uvítacího e-mailu</span></span>' +
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Tento text se pošle zástupci (nebo hráči, pokud e-mail zástupce chybí) po kliknutí na "Odeslat uvítací e-mail" u Nových uživatelů níže — jako <b>' + esc(FROM_EMAIL) + '</b>, s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '" na Disku. Stejný text pro všechny, nezávisle na jménu hráče.</div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">' +
+            '<input type="text" id="emailTemplateSubject" placeholder="Předmět" value="' + esc(emailTmpl.predmet) + '" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;">' +
+            '<textarea id="emailTemplateBody" rows="8" placeholder="Tělo e-mailu" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;resize:vertical;">' + esc(emailTmpl.telo) + '</textarea>' +
+          '</div>' +
+          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+            '<button class="icon-btn toolbar-btn" onclick="saveEmailTemplateFromUi_()">Uložit šablonu</button>' +
+            '<span id="emailTemplateSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+          '</div>' +
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title box-head">' + iconUpload + '<span>Noví uživatelé</span></span>' +
@@ -2472,6 +2492,7 @@
         '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
         '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
           '<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
+          '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
           '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>' +
         '</div>' +
       '</div>';
@@ -2674,6 +2695,219 @@
     if (!jobs.length) return Promise.resolve(null);
     return Promise.all(jobs).then(function() {
       return 'Google kontakty: ' + results.join(', ') + '.';
+    });
+  }
+
+  // ---------- Uvítací e-mail (Gmail API) ----------
+  // Sent "From: hosek@fkslovany.cz" using Petr's own Gmail "Send mail as" alias for that
+  // address (set up once, by hand, in his Gmail settings) — the app just calls the normal
+  // Gmail API under his own OAuth token, no separate mail server involved. Subject/body are
+  // one shared template (same text for every player) stored in its own "Email" sheet tab so
+  // it's editable from Nastavení and stays in sync across every device/browser he uses; the
+  // 4 attachment files are looked up by folder name on his Drive each time (cached locally),
+  // not by a hardcoded ID, since he asked for that to be found automatically.
+  var EMAIL_SHEET = 'Email';
+  var FROM_EMAIL = 'hosek@fkslovany.cz';
+  var WELCOME_FOLDER_NAME = 'Soubory do úvodního e-mailu';
+  var WELCOME_FOLDER_CACHE_KEY = 'fks_welcome_folder_cache_v1';
+  var DEFAULT_EMAIL_TEMPLATE = {
+    predmet: 'Vítejte ve FK Slovany Pardubice',
+    telo: 'Dobrý den,\n\nvítáme Vás ve FK Slovany Pardubice. V přílohách najdete základní informace k registraci, klubovému oblečení a parkování u hřiště.\n\nS pozdravem\nPetr Hošek\nSekretář FK Slovany Pardubice'
+  };
+  function fetchEmailTemplate_() {
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(EMAIL_SHEET + '!A1:B2'), {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    }).then(function(r) { return r.ok ? r.json() : null; }).then(function(json) {
+      var values = (json && json.values) || [];
+      var predmet = (values[0] && values[0][1]) || '';
+      var telo = (values[1] && values[1][1]) || '';
+      if (!predmet && !telo) return DEFAULT_EMAIL_TEMPLATE;
+      return { predmet: predmet, telo: telo };
+    }).catch(function() { return DEFAULT_EMAIL_TEMPLATE; });
+  }
+  // Writes the template into the "Email" tab, creating that tab first if this is the very
+  // first save (mirrors how "Čekající" was created — never assumed to already exist).
+  function saveEmailTemplate_(predmet, telo) {
+    var payload = { valueInputOption: 'RAW', data: [
+      { range: EMAIL_SHEET + '!A1:B2', values: [['Předmět', predmet], ['Tělo', telo]] }
+    ] };
+    function doUpdate() {
+      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    return doUpdate().then(function(r) {
+      if (r.ok) return r.json();
+      return r.json().then(function(err) {
+        var msg = (err.error && err.error.message) || ('HTTP ' + r.status);
+        if (msg.toLowerCase().indexOf('unable to parse range') === -1) throw new Error(msg);
+        return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + ':batchUpdate', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests: [{ addSheet: { properties: { title: EMAIL_SHEET } } }] })
+        }).then(function(r2) {
+          if (!r2.ok) return r2.json().then(function(e2) { throw new Error((e2.error && e2.error.message) || ('HTTP ' + r2.status)); });
+          return doUpdate();
+        }).then(function(r3) {
+          if (!r3.ok) return r3.json().then(function(e3) { throw new Error((e3.error && e3.error.message) || ('HTTP ' + r3.status)); });
+          return r3.json();
+        });
+      });
+    });
+  }
+  function saveEmailTemplateFromUi_() {
+    var subjEl = document.getElementById('emailTemplateSubject');
+    var bodyEl = document.getElementById('emailTemplateBody');
+    var statusEl = document.getElementById('emailTemplateSaveStatus');
+    var predmet = subjEl ? subjEl.value : '';
+    var telo = bodyEl ? bodyEl.value : '';
+    if (statusEl) statusEl.textContent = 'Ukládám…';
+    saveEmailTemplate_(predmet, telo).then(function() {
+      DATA.emailTemplate = { predmet: predmet, telo: telo };
+      if (statusEl) statusEl.textContent = 'Uloženo.';
+      pushNotification('Šablona uvítacího e-mailu byla uložena.', 'info');
+    }).catch(function(err) {
+      if (statusEl) statusEl.textContent = 'Uložení selhalo: ' + err.message;
+      pushNotification('Uložení šablony uvítacího e-mailu selhalo: ' + err.message, 'error');
+    });
+  }
+  function loadWelcomeFolderCache_() {
+    try { return JSON.parse(localStorage.getItem(WELCOME_FOLDER_CACHE_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function saveWelcomeFolderCache_(obj) {
+    try { localStorage.setItem(WELCOME_FOLDER_CACHE_KEY, JSON.stringify(obj)); } catch (e) {}
+  }
+  // Finds the Drive folder by name (not a hardcoded ID, since Petr asked the app to locate it
+  // itself) and lists its files, caching the result in this browser so repeated sends don't
+  // re-search every time. Pass forceRefresh=true to bypass the cache (e.g. if he adds a file).
+  function findWelcomeFolderFiles_(forceRefresh) {
+    var cached = !forceRefresh && loadWelcomeFolderCache_();
+    if (cached && cached.files && cached.files.length) return Promise.resolve(cached.files);
+    return fetch('https://www.googleapis.com/drive/v3/files?q=' +
+      encodeURIComponent("name contains 'úvodního' and mimeType = 'application/vnd.google-apps.folder' and trashed = false") +
+      '&fields=' + encodeURIComponent('files(id,name)'), { headers: { 'Authorization': 'Bearer ' + accessToken } })
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        var folder = (json.files || [])[0];
+        if (!folder) throw new Error('Složka "' + WELCOME_FOLDER_NAME + '" nebyla na Disku nalezena.');
+        return fetch('https://www.googleapis.com/drive/v3/files?q=' +
+          encodeURIComponent("'" + folder.id + "' in parents and trashed = false") +
+          '&fields=' + encodeURIComponent('files(id,name)'), { headers: { 'Authorization': 'Bearer ' + accessToken } })
+          .then(function(r2) { return r2.json(); })
+          .then(function(json2) {
+            var files = json2.files || [];
+            if (!files.length) throw new Error('Složka "' + WELCOME_FOLDER_NAME + '" na Disku byla nalezena, ale je prázdná.');
+            saveWelcomeFolderCache_({ folderId: folder.id, files: files });
+            return files;
+          });
+      });
+  }
+  function guessMimeType_(filename) {
+    var ext = (filename.split('.').pop() || '').toLowerCase();
+    var map = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif' };
+    return map[ext] || 'application/octet-stream';
+  }
+  function bytesToBase64_(bytes) {
+    var binary = '';
+    var chunkSize = 0x8000;
+    for (var i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+  function utf8ToBase64_(str) {
+    return bytesToBase64_(new TextEncoder().encode(str));
+  }
+  function wrapBase64_(b64) {
+    return b64.replace(/(.{76})/g, '$1\r\n');
+  }
+  function toBase64Url_(b64) {
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  // RFC 2047 "B" encoding — needed because the subject line has Czech diacritics, which a bare
+  // header would mangle in some mail clients.
+  function encodeMimeHeader_(str) {
+    return '=?UTF-8?B?' + utf8ToBase64_(str) + '?=';
+  }
+  // Assembles a raw RFC 2822 multipart/mixed message and returns it base64url-encoded, exactly
+  // the shape Gmail's users.messages.send expects in its "raw" field.
+  function buildRawEmail_(from, to, subject, bodyText, attachments) {
+    var boundary = 'fks_boundary_' + Date.now().toString(36);
+    var lines = [];
+    lines.push('From: ' + from);
+    lines.push('To: ' + to);
+    lines.push('Subject: ' + encodeMimeHeader_(subject));
+    lines.push('MIME-Version: 1.0');
+    lines.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
+    lines.push('');
+    lines.push('--' + boundary);
+    lines.push('Content-Type: text/plain; charset="UTF-8"');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(wrapBase64_(utf8ToBase64_(bodyText)));
+    attachments.forEach(function(att) {
+      lines.push('--' + boundary);
+      lines.push('Content-Type: ' + att.mimeType + '; name="' + att.name + '"');
+      lines.push('Content-Disposition: attachment; filename="' + att.name + '"');
+      lines.push('Content-Transfer-Encoding: base64');
+      lines.push('');
+      lines.push(wrapBase64_(att.base64));
+    });
+    lines.push('--' + boundary + '--');
+    return toBase64Url_(utf8ToBase64_(lines.join('\r\n')));
+  }
+  // Downloads the 4 attachment files fresh every send (small PDFs/JPG, not worth caching the
+  // bytes) and posts the assembled message via the Gmail API under Petr's own OAuth token.
+  function sendWelcomeEmail_(p) {
+    var to = (p.zastupceEmail || p.emailHrac || '').trim();
+    if (!to) return Promise.reject(new Error('Chybí e-mail zástupce i hráče, není kam poslat.'));
+    return Promise.all([fetchEmailTemplate_(), findWelcomeFolderFiles_()]).then(function(results) {
+      var tmpl = results[0];
+      var files = results[1];
+      return Promise.all(files.map(function(f) {
+        return fetch('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media', { headers: { 'Authorization': 'Bearer ' + accessToken } })
+          .then(function(r) { if (!r.ok) throw new Error('Nepodařilo se stáhnout přílohu "' + f.name + '".'); return r.arrayBuffer(); })
+          .then(function(buf) { return { name: f.name, mimeType: guessMimeType_(f.name), base64: bytesToBase64_(new Uint8Array(buf)) }; });
+      })).then(function(attachments) {
+        var raw = buildRawEmail_(FROM_EMAIL, to, tmpl.predmet, tmpl.telo, attachments);
+        return fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: raw })
+        }).then(function(r) {
+          if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+          return r.json();
+        });
+      });
+    });
+  }
+  function confirmSendWelcomeEmail(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var to = (p.zastupceEmail || p.emailHrac || '').trim();
+    if (!to) {
+      pushNotification('Nelze odeslat uvítací e-mail — u ' + p.jmenoCele + ' chybí e-mail zástupce i hráče.', 'error');
+      return;
+    }
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Odeslat uvítací e-mail na <b>' + esc(to) + '</b> (' + esc(p.jmenoCele) + ') z adresy ' + esc(FROM_EMAIL) + ', s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '"?</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applySendWelcomeEmail_(' + sheetRow + ')">Odeslat</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+  function applySendWelcomeEmail_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    pushNotification('Odesílám uvítací e-mail pro ' + p.jmenoCele + '…', 'info');
+    sendWelcomeEmail_(p).then(function() {
+      pushNotification('Uvítací e-mail pro ' + p.jmenoCele + ' byl odeslán na ' + (p.zastupceEmail || p.emailHrac) + '.', 'info');
+    }).catch(function(err) {
+      pushNotification('Odeslání uvítacího e-mailu pro ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
     });
   }
 
