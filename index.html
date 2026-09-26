@@ -2245,15 +2245,17 @@
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title box-head">' + iconMail + '<span>Šablona uvítacího e-mailu</span></span>' +
-          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Tento text se pošle zástupci (nebo hráči, pokud e-mail zástupce chybí) po kliknutí na "Odeslat uvítací e-mail" u Nových uživatelů níže — jako <b>' + esc(FROM_EMAIL) + '</b>, s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '" na Disku. Stejný text pro všechny, nezávisle na jménu hráče.</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Tento text se pošle zástupci (nebo hráči, pokud e-mail zástupce chybí) po kliknutí na "Odeslat uvítací e-mail" u Nových uživatelů níže — jako <b>' + esc(FROM_EMAIL) + '</b>, s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '" na Disku. Stejný text pro všechny, nezávisle na jménu hráče. Formátování v textu: <code>**tučně**</code> pro tučné písmo, <code>*kurzívou*</code> pro kurzívu, a jakýkoliv odkaz začínající na http:// nebo https:// se automaticky změní na klikací. Náhled, jak bude vypadat, je pod polem.</div>' +
           '<div style="display:flex;flex-direction:column;gap:8px;">' +
             '<input type="text" id="emailTemplateSubject" placeholder="Předmět" value="' + esc(emailTmpl.predmet) + '" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;">' +
-            '<textarea id="emailTemplateBody" rows="8" placeholder="Tělo e-mailu" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;resize:vertical;">' + esc(emailTmpl.telo) + '</textarea>' +
+            '<textarea id="emailTemplateBody" rows="12" placeholder="Tělo e-mailu" oninput="updateEmailTemplatePreview_()" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;resize:vertical;">' + esc(emailTmpl.telo) + '</textarea>' +
           '</div>' +
           '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
             '<button class="icon-btn toolbar-btn" onclick="saveEmailTemplateFromUi_()">Uložit šablonu</button>' +
             '<span id="emailTemplateSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
           '</div>' +
+          '<div style="margin-top:12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Náhled</div>' +
+          '<div id="emailTemplatePreview" style="margin-top:6px;padding:12px;border-radius:8px;border:1px solid var(--border);background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">' + markdownLiteToHtml_(emailTmpl.telo) + '</div>' +
         '</div>' +
         '<div class="info-box" style="min-width:100%;">' +
           '<span class="box-title box-head">' + iconUpload + '<span>Noví uživatelé</span></span>' +
@@ -2712,7 +2714,18 @@
   var WELCOME_FOLDER_CACHE_KEY = 'fks_welcome_folder_cache_v1';
   var DEFAULT_EMAIL_TEMPLATE = {
     predmet: 'Vítejte ve FK Slovany Pardubice',
-    telo: 'Dobrý den,\n\nvítáme Vás ve FK Slovany Pardubice. V přílohách najdete základní informace k registraci, klubovému oblečení a parkování u hřiště.\n\nS pozdravem\nPetr Hošek\nSekretář FK Slovany Pardubice'
+    telo: 'Dobrý den,\n\n' +
+      'děkujeme za registraci Vašeho dítěte do našeho klubu. Moc nás těší Váš zájem. Nyní je nutné provést následující:\n\n' +
+      '**1. Zprovoznit aplikaci KIS.**\n' +
+      'Registraci schválím a tím Vám bude doručen odkaz, po jeho otevření si nastavte heslo. Pro přihlášení do aplikace KIS použijete uživatelské jméno ve formátu jmeno.prijmeni dítěte a nastavené heslo. V příloze *KIS-uvodni-informace* naleznete bližší informace. Tato aplikace je hlavním komunikačním kanálem, naleznete v ní veškeré informace.\n\n' +
+      '**2. Registrace do systému FAČR.**\n' +
+      'Prosíme o registraci do systému FAČR pomocí následujícího odkazu: https://is.fotbal.cz/signup?discipline=football\n' +
+      'Tato registrace je nezbytná, aby dítě bylo oficiálním členem klubu a mohlo se účastnit tréninků a poté i zápasů. Systém Vás provede jednotlivými kroky — důležité je registrovat dítě pod náš klub (**FK Slovany Pardubice, ID 5320891**). V příloze *Navod-na-registraci* je případně podrobný návod.\n\n' +
+      '**3. Zaslání profilové fotografie Vašeho dítěte.**\n' +
+      'Je nutná pro dokončení registrace.\n\n' +
+      'Dále Vás přidám do WhatsApp skupiny určené pro jednotlivé kategorie. V příloze *Parkovani* najdete instrukce k případnému parkování v areálu. Také prosím věnujte pozornost příloze *Klubové oblečení*.\n\n' +
+      'V případě dotazů jsem k dispozici. *Omlouvám se za obsáhlost.*\n\n' +
+      'Hezký den'
   };
   function fetchEmailTemplate_() {
     return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(EMAIL_SHEET + '!A1:B2'), {
@@ -2756,6 +2769,11 @@
         });
       });
     });
+  }
+  function updateEmailTemplatePreview_() {
+    var bodyEl = document.getElementById('emailTemplateBody');
+    var previewEl = document.getElementById('emailTemplatePreview');
+    if (bodyEl && previewEl) previewEl.innerHTML = markdownLiteToHtml_(bodyEl.value);
   }
   function saveEmailTemplateFromUi_() {
     var subjEl = document.getElementById('emailTemplateSubject');
@@ -2831,31 +2849,63 @@
   function encodeMimeHeader_(str) {
     return '=?UTF-8?B?' + utf8ToBase64_(str) + '?=';
   }
-  // Assembles a raw RFC 2822 multipart/mixed message and returns it base64url-encoded, exactly
-  // the shape Gmail's users.messages.send expects in its "raw" field.
-  function buildRawEmail_(from, to, subject, bodyText, attachments) {
-    var boundary = 'fks_boundary_' + Date.now().toString(36);
+  // ---------- Tiny markdown-lite for the email body ----------
+  // The template box in Nastavení is a plain textarea, so formatting is done with a handful of
+  // markdown-style markers instead of a rich-text editor: **tučně**, *kurzívou*, and any bare
+  // http(s):// URL is turned into a clickable link automatically. Kept deliberately tiny (no
+  // lists, no nested markup) so both directions (render for preview/send, strip for the
+  // plain-text fallback part of the e-mail) stay simple and predictable.
+  function markdownLiteToHtml_(text) {
+    var h = esc(text);
+    h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    h = h.replace(/\*(.+?)\*/g, '<i>$1</i>');
+    h = h.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#0b57d0;">$1</a>');
+    h = h.replace(/\n/g, '<br>');
+    return h;
+  }
+  function stripMarkdownLite_(text) {
+    return text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1');
+  }
+  // Assembles a raw RFC 2822 message (multipart/mixed containing a multipart/alternative
+  // text+HTML body plus the attachment parts) and returns it base64url-encoded, exactly the
+  // shape Gmail's users.messages.send expects in its "raw" field. The HTML part is what gives
+  // the e-mail working links and bold/italic; the plain-text part is just a fallback for mail
+  // clients that don't render HTML.
+  function buildRawEmail_(from, to, subject, bodyRaw, attachments) {
+    var mixedBoundary = 'fks_mixed_' + Date.now().toString(36);
+    var altBoundary = 'fks_alt_' + Date.now().toString(36) + 'a';
+    var plainText = stripMarkdownLite_(bodyRaw);
+    var bodyHtml = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111;">' + markdownLiteToHtml_(bodyRaw) + '</div>';
     var lines = [];
     lines.push('From: ' + from);
     lines.push('To: ' + to);
     lines.push('Subject: ' + encodeMimeHeader_(subject));
     lines.push('MIME-Version: 1.0');
-    lines.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
+    lines.push('Content-Type: multipart/mixed; boundary="' + mixedBoundary + '"');
     lines.push('');
-    lines.push('--' + boundary);
+    lines.push('--' + mixedBoundary);
+    lines.push('Content-Type: multipart/alternative; boundary="' + altBoundary + '"');
+    lines.push('');
+    lines.push('--' + altBoundary);
     lines.push('Content-Type: text/plain; charset="UTF-8"');
     lines.push('Content-Transfer-Encoding: base64');
     lines.push('');
-    lines.push(wrapBase64_(utf8ToBase64_(bodyText)));
+    lines.push(wrapBase64_(utf8ToBase64_(plainText)));
+    lines.push('--' + altBoundary);
+    lines.push('Content-Type: text/html; charset="UTF-8"');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(wrapBase64_(utf8ToBase64_(bodyHtml)));
+    lines.push('--' + altBoundary + '--');
     attachments.forEach(function(att) {
-      lines.push('--' + boundary);
+      lines.push('--' + mixedBoundary);
       lines.push('Content-Type: ' + att.mimeType + '; name="' + att.name + '"');
       lines.push('Content-Disposition: attachment; filename="' + att.name + '"');
       lines.push('Content-Transfer-Encoding: base64');
       lines.push('');
       lines.push(wrapBase64_(att.base64));
     });
-    lines.push('--' + boundary + '--');
+    lines.push('--' + mixedBoundary + '--');
     return toBase64Url_(utf8ToBase64_(lines.join('\r\n')));
   }
   // Downloads the 4 attachment files fresh every send (small PDFs/JPG, not worth caching the
