@@ -47,6 +47,20 @@
     .filter-panel-inner .fp-toggle-btn.active { background: rgba(0,255,255,0.12); border-color: var(--accent); color: var(--accent); font-weight: 600; }
     .filter-panel-inner .fp-reset { font-size: 11px; color: var(--muted); text-decoration: none; text-align: center; margin-top: 2px; }
     .filter-panel-inner .fp-reset:hover { color: var(--accent); }
+    /* Custom dropdown ("combo") replacing native <select> in the filter panel — a native select
+       pops the OS's own full-screen picker on mobile (huge, unbranded, covers the whole
+       screen), so filters get their own small in-app list instead, styled like the rest of the
+       app and positioned near the button the same way the Sdílet/Filtr panels already are. */
+    .combo-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; padding: 6px 8px; background: #1a1e23; border: 1px solid var(--border); color: var(--text); border-radius: 7px; font-family: inherit; cursor: pointer; text-align: left; transition: border-color .12s ease; }
+    .combo-btn:hover, .combo-btn.open { border-color: var(--accent); }
+    .combo-btn-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .combo-chevron { flex-shrink: 0; color: var(--muted); transition: transform .15s ease; }
+    .combo-btn.open .combo-chevron { transform: rotate(180deg); color: var(--accent); }
+    .combo-list { position: fixed; z-index: 60; width: 220px; max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
+    .combo-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; font-size: 13px; border-radius: 6px; cursor: pointer; }
+    .combo-opt:hover { background: rgba(0,255,255,0.08); }
+    .combo-opt.active { color: var(--accent); font-weight: 600; }
+    .combo-opt svg { flex-shrink: 0; color: var(--accent); }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; }
     .cat-item.active { background: rgba(0,255,255,0.1); border-color: var(--accent); color: var(--text); }
     .cat-item[data-cat="__vyrazeni__"] { margin-top: 8px; padding-top: 11px; border-top: 1px solid var(--border); border-radius: 0; }
@@ -940,6 +954,7 @@
   }
   // ---------- Sidebar Sdílet / Filtr dropdown panels ----------
   function toggleSidebarPanel(which, btn) {
+    closeAllCombos_();
     var ids = { share: 'sharePanel', filter: 'filterPanel', sort: 'sortPanel' };
     Object.keys(ids).forEach(function(key) {
       var el = document.getElementById(ids[key]);
@@ -991,38 +1006,37 @@
   function renderFilterPanel() {
     var el = document.getElementById('filterPanel');
     if (!el || !DATA) return;
+    // Rebuilding the panel below replaces the combo-btn elements a floating combo-list might
+    // still be positioned against — close any open one first so it can't go stale/orphaned.
+    closeAllCombos_();
     var disabled = loadDisabledChecklistKeys_();
     var checklistOptions = (DATA.players[0] ? Object.keys(DATA.players[0].checklist) : []).filter(function(k) { return disabled.indexOf(k) === -1; });
+    var roky = Array.from(new Set(DATA.players.map(function(p) { return String(p.rok); }))).filter(Boolean).sort();
+
+    var rokOptions = [{ value: 'Vše', label: 'Ročník: Vše' }].concat(roky.map(function(y) { return { value: y, label: y }; }));
+    var cityOptions = [{ value: 'Vše', label: 'Obec: Vše' }].concat(DATA.cities.map(function(c) { return { value: c, label: c }; }));
+    var checklistKeyOptions = [{ value: '', label: 'Položka checklistu: žádná' }].concat(checklistOptions.map(function(k) {
+      return { value: k, label: CHECKLIST_LABELS[k] || k };
+    }));
+    var checklistStatusOptions = [{ value: 'nesplneno', label: 'Nesplněno' }, { value: 'splneno', label: 'Splněno' }];
+
+    registerCombo_('rok', rokOptions, state.rok, function(v) { state.rok = v; renderFilterPanel(); render(); });
+    registerCombo_('city', cityOptions, state.city, function(v) { state.city = v; renderFilterPanel(); render(); });
+    registerCombo_('checklistKey', checklistKeyOptions, state.checklistKey, function(v) { state.checklistKey = v; renderFilterPanel(); render(); });
+    registerCombo_('checklistStatus', checklistStatusOptions, state.checklistStatus, function(v) { state.checklistStatus = v; renderFilterPanel(); render(); });
+
     el.innerHTML = '<div class="filter-panel-inner">' +
         '<input type="search" id="sidebarSearch" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
-        '<div class="fp-row-2"><select id="sidebarRok"></select><select id="sidebarCity"></select></div>' +
+        '<div class="fp-row-2">' + comboBtnHtml_('rok') + comboBtnHtml_('city') + '</div>' +
         '<div class="fp-divider"></div>' +
-        '<div class="fp-row-2">' +
-          '<select id="fpChecklistKey"></select>' +
-          '<select id="fpChecklistStatus">' +
-            '<option value="nesplneno"' + (state.checklistStatus === 'nesplneno' ? ' selected' : '') + '>Nesplněno</option>' +
-            '<option value="splneno"' + (state.checklistStatus === 'splneno' ? ' selected' : '') + '>Splněno</option>' +
-          '</select>' +
-        '</div>' +
+        '<div class="fp-row-2">' + comboBtnHtml_('checklistKey') + comboBtnHtml_('checklistStatus') + '</div>' +
         '<div class="fp-row-2">' +
           '<button type="button" class="fp-toggle-btn' + (state.missingAnyStep ? ' active' : '') + '" onclick="toggleFpFlag(\'missingAnyStep\')">Chybí něco</button>' +
           '<button type="button" class="fp-toggle-btn' + (state.noPhoto ? ' active' : '') + '" onclick="toggleFpFlag(\'noPhoto\')">Není foto</button>' +
         '</div>' +
         '<a href="javascript:void(0)" class="fp-reset" onclick="resetSidebarFilters()">Zrušit filtry</a>' +
       '</div>';
-    var roky = Array.from(new Set(DATA.players.map(function(p) { return String(p.rok); }))).filter(Boolean).sort();
-    fillSelect('sidebarRok', roky, state.rok);
-    fillSelect('sidebarCity', DATA.cities, state.city);
-    var keySel = document.getElementById('fpChecklistKey');
-    keySel.innerHTML = '<option value="">Položka checklistu: žádná</option>' +
-      checklistOptions.map(function(k) {
-        return '<option value="' + esc(k) + '"' + (state.checklistKey === k ? ' selected' : '') + '>' + esc(CHECKLIST_LABELS[k] || k) + '</option>';
-      }).join('');
     document.getElementById('sidebarSearch').addEventListener('input', function(e) { state.q = e.target.value; render(); });
-    document.getElementById('sidebarRok').addEventListener('change', function(e) { state.rok = e.target.value; render(); });
-    document.getElementById('sidebarCity').addEventListener('change', function(e) { state.city = e.target.value; render(); });
-    keySel.addEventListener('change', function(e) { state.checklistKey = e.target.value; render(); });
-    document.getElementById('fpChecklistStatus').addEventListener('change', function(e) { state.checklistStatus = e.target.value; render(); });
   }
   function toggleFpFlag(key) {
     state[key] = !state[key];
@@ -3693,6 +3707,7 @@
           var p = document.getElementById(id);
           if (p) p.style.display = 'none';
         });
+        closeAllCombos_();
       }
     }
     var catListEl = document.getElementById('catList');
@@ -3755,6 +3770,11 @@
     modalOverlayEl.addEventListener('click', function(e) { if (e.target === modalOverlayEl) closeModal(); });
   }
   document.addEventListener('click', function(e) {
+    if (comboOpenId_) {
+      var openComboList = document.getElementById('comboList_' + comboOpenId_);
+      var clickedOpenComboBtn = e.target.closest && e.target.closest('#combo_' + comboOpenId_);
+      if (openComboList && !openComboList.contains(e.target) && !clickedOpenComboBtn) closeAllCombos_();
+    }
     if (notifPanelOpen) {
       var panel = document.getElementById('notifPanel');
       var btn = e.target.closest ? e.target.closest('[onclick="toggleNotifications()"]') : null;
@@ -3771,18 +3791,62 @@
     });
   });
 
-  function fillSelect(id, values, selected) {
-    var el = document.getElementById(id);
-    el.innerHTML = '';
-    var allOpt = document.createElement('option');
-    allOpt.value = 'Vše'; allOpt.textContent = (id.toLowerCase().indexOf('rok') !== -1 ? 'Ročník: Vše' : 'Obec: Vše');
-    el.appendChild(allOpt);
-    values.forEach(function(v) {
-      var opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
-      el.appendChild(opt);
+  // ---------- Custom dropdown ("combo") replacing native <select> in the filter panel ----------
+  // A native <select> pops the OS's own full-screen picker on mobile (huge list, no branding,
+  // covers everything) — see the CSS comment above .combo-btn. Each combo is registered fresh
+  // on every renderFilterPanel() call (options/selected/onChange all live in COMBO_REGISTRY_,
+  // keyed by a short id), and its dropdown list is a `position:fixed` element appended to
+  // <body> (not to filterPanel) so it's never clipped by filterPanel's own overflow/scroll box,
+  // positioned off the trigger button the same way positionDropdownPanel_ already does for the
+  // Sdílet/Filtr/Seřadit panels.
+  var COMBO_REGISTRY_ = {};
+  var comboOpenId_ = null;
+  var COMBO_CHEVRON_SVG_ = '<svg class="combo-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+  var COMBO_CHECK_SVG_ = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  function registerCombo_(id, options, selected, onChange) {
+    COMBO_REGISTRY_[id] = { options: options, selected: selected, onChange: onChange };
+  }
+  function comboBtnHtml_(id) {
+    var c = COMBO_REGISTRY_[id];
+    if (!c) return '';
+    var opt = c.options.filter(function(o) { return o.value === c.selected; })[0] || c.options[0];
+    return '<button type="button" class="combo-btn" id="combo_' + id + '" onclick="toggleCombo_(\'' + id + '\', this)">' +
+      '<span class="combo-btn-label">' + esc(opt ? opt.label : '') + '</span>' +
+      COMBO_CHEVRON_SVG_ +
+    '</button>';
+  }
+  function closeAllCombos_() {
+    Array.prototype.forEach.call(document.querySelectorAll('.combo-list'), function(l) { l.remove(); });
+    Array.prototype.forEach.call(document.querySelectorAll('.combo-btn.open'), function(b) { b.classList.remove('open'); });
+    comboOpenId_ = null;
+  }
+  function toggleCombo_(id, btn) {
+    var wasOpen = comboOpenId_ === id;
+    closeAllCombos_();
+    if (wasOpen) return;
+    var c = COMBO_REGISTRY_[id];
+    if (!c) return;
+    var list = document.createElement('div');
+    list.className = 'combo-list';
+    list.id = 'comboList_' + id;
+    list.innerHTML = c.options.map(function(o) {
+      var active = o.value === c.selected;
+      return '<div class="combo-opt' + (active ? ' active' : '') + '" data-value="' + esc(o.value) + '">' +
+        '<span>' + esc(o.label) + '</span>' + (active ? COMBO_CHECK_SVG_ : '') +
+      '</div>';
+    }).join('');
+    document.body.appendChild(list);
+    positionDropdownPanel_(list, btn);
+    Array.prototype.forEach.call(list.children, function(row) {
+      row.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var v = row.getAttribute('data-value');
+        closeAllCombos_();
+        c.onChange(v);
+      });
     });
-    el.value = selected;
+    btn.classList.add('open');
+    comboOpenId_ = id;
   }
 
   // Try to skip the manual sign-in click on every load — see trySilentSignIn_ above.
