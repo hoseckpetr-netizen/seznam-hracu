@@ -98,6 +98,12 @@
     .info-row a { color: var(--text); text-decoration: none; }
     .info-row a:hover { color: var(--accent); }
     .info-box > a:hover { color: var(--accent) !important; text-decoration: underline !important; }
+    .settings-box-toggle { cursor: pointer; background: none; border: none; padding: 0; margin: 0; font: inherit; width: 100%; justify-content: space-between; }
+    .settings-box-toggle:hover { color: var(--text); }
+    .settings-box-chevron { transition: transform .15s ease; flex-shrink: 0; color: var(--muted); }
+    .info-box.collapsed .settings-box-chevron { transform: rotate(-90deg); }
+    .settings-box-body { display: flex; flex-direction: column; gap: 12px; }
+    .info-box.collapsed .settings-box-body { display: none; }
     .cat-editor-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 0 20px; }
     .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
     .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -2180,6 +2186,40 @@
     if (statusEl) statusEl.textContent = 'Uloženo.';
   }
 
+  // ---------- Collapsible Nastavení sections ----------
+  // Every section in Nastavení starts collapsed (just its header) so the page reads as a short
+  // list of topics instead of a wall of tables/forms — clicking the header reveals it. Which
+  // sections are open is remembered per browser (not per box's own content), the same way the
+  // app already remembers checklist/category display prefs locally.
+  var SETTINGS_BOX_STATE_KEY = 'fks_settings_box_open_v1';
+  function loadSettingsBoxState_() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_BOX_STATE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveSettingsBoxState_(map) {
+    try { localStorage.setItem(SETTINGS_BOX_STATE_KEY, JSON.stringify(map)); } catch (e) {}
+  }
+  function isSettingsBoxOpen_(id) {
+    return !!loadSettingsBoxState_()[id];
+  }
+  function toggleSettingsBox_(id) {
+    var state = loadSettingsBoxState_();
+    var open = !state[id];
+    state[id] = open;
+    saveSettingsBoxState_(state);
+    var box = document.querySelector('.info-box[data-box-id="' + id + '"]');
+    if (box) box.classList.toggle('collapsed', !open);
+  }
+  function settingsBox_(id, iconSvg, title, bodyHtml, wide) {
+    var open = isSettingsBoxOpen_(id);
+    var chevron = '<svg class="settings-box-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+    return '<div class="info-box' + (open ? '' : ' collapsed') + '" data-box-id="' + esc(id) + '"' + (wide ? ' style="min-width:100%;"' : '') + '>' +
+      '<button type="button" class="box-title box-head settings-box-toggle" onclick="toggleSettingsBox_(\'' + id + '\')">' +
+        '<span style="display:flex;align-items:center;gap:7px;">' + iconSvg + '<span>' + title + '</span></span>' +
+        chevron +
+      '</button>' +
+      '<div class="settings-box-body">' + bodyHtml + '</div>' +
+    '</div>';
+  }
   function renderSettingsView() {
     if (!DATA || DATA.role !== 'admin') {
       return '<div class="header"><h1>Nastavení</h1></div><div class="loading">Nastavení jsou dostupná pouze pro správce účtu.</div>';
@@ -2203,64 +2243,63 @@
     var iconMail = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="m22 6-10 7L2 6"></path></svg>';
     var emailTmpl = (DATA.emailTemplate) || DEFAULT_EMAIL_TEMPLATE;
 
+    var kategorieBody =
+      renderCategoryOverlapWarning_() +
+      '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
+        '<th></th><th>Kód</th><th>Zobrazit jako</th><th>Ročník od</th><th>Ročník do</th><th>Hráčů</th><th>Ve filtru</th><th>Smazat</th>' +
+      '</tr></thead><tbody>' + catRows + '</tbody></table></div>' +
+      '<div id="catPlayerLists"></div>' +
+      renderCategoryAddRow_() +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<button class="icon-btn toolbar-btn" onclick="saveCategoryRules()">Uložit změny kategorií</button>' +
+        '<span id="catSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+      '</div>' +
+      '<span class="phase-note">Ročník od/do se ukládá do listu "Kategorie" v tabulce (viditelné i pro ostatní). Barva, "zobrazit jako" a "Ve filtru" se zatím ukládají jen v tomto prohlížeči — list "Kategorie" má vedle sloupce s kategorií ještě nedokončený sloupec pro příští sezónu, který nechci přepisovat. Kategorie bez vlastního řádku (např. "Muži") se sem doplňují automaticky podle toho, co mají hráči vyplněné. Odškrtnutím "Ve filtru" kategorie zmizí z filtrů na úvodní stránce, hráči v ní zůstanou v seznamu beze změny.</span>';
+
+    var checklistBody =
+      '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
+        '<th>Položka</th><th>Klíč</th><th>Aktivní</th>' +
+      '</tr></thead><tbody>' + checklistRows + '</tbody></table></div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<button class="icon-btn toolbar-btn" onclick="saveChecklistSettings()">Uložit checklist</button>' +
+        '<span id="checklistSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+      '</div>' +
+      '<span class="phase-note">Neaktivní položky se u hráčů přestanou zobrazovat a nepočítají se do "kroků hotovo". Ukládá se jen v tomto prohlížeči (stejně jako u kategorií). Přidání nových položek přímo v appce bude v další verzi.</span>';
+
+    var fotkyBody =
+      '<div style="font-size:12px;color:var(--muted);">Jednorázově naimportuje fotky ze složky "Fotky hráčů" na Disku pro všechny hráče, kteří ji ještě nemají. Nově přidaní hráči se pak řeší jednotlivě zaškrtnutím "FOTO PC".</div>' +
+      '<button class="icon-btn toolbar-btn" onclick="bulkImportAllPhotos()">Naimportovat fotky pro všechny hráče</button>' +
+      '<div id="bulkPhotoStatus" style="font-size:12px;color:var(--muted);"></div>';
+
+    var importBody =
+      '<div style="font-size:12px;color:var(--muted);">Vyberte soubor stažený z KIS notifikace. Záznamy se přidají do fronty "Noví uživatelé" níže — nic se nezapíše do tabulky, dokud je jednotlivě neschválíte.</div>' +
+      '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
+      '<div id="importPreview" style="font-size:12px;color:var(--muted);"></div>';
+
+    var emailBody =
+      '<div style="font-size:12px;color:var(--muted);">Tento text se pošle zástupci (nebo hráči, pokud e-mail zástupce chybí) po kliknutí na "Odeslat uvítací e-mail" u Nových uživatelů níže — jako <b>' + esc(FROM_EMAIL) + '</b>, s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '" na Disku. Stejný text pro všechny, nezávisle na jménu hráče. Formátování v textu: <code>**tučně**</code> pro tučné písmo, <code>*kurzívou*</code> pro kurzívu, a jakýkoliv odkaz začínající na http:// nebo https:// se automaticky změní na klikací. Náhled, jak bude vypadat, je pod polem.</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;">' +
+        '<input type="text" id="emailTemplateSubject" placeholder="Předmět" value="' + esc(emailTmpl.predmet) + '" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;">' +
+        '<textarea id="emailTemplateBody" rows="12" placeholder="Tělo e-mailu" oninput="updateEmailTemplatePreview_()" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;resize:vertical;">' + esc(emailTmpl.telo) + '</textarea>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<button class="icon-btn toolbar-btn" onclick="saveEmailTemplateFromUi_()">Uložit šablonu</button>' +
+        '<span id="emailTemplateSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Náhled</div>' +
+      '<div id="emailTemplatePreview" style="padding:12px;border-radius:8px;border:1px solid var(--border);background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">' + markdownLiteToHtml_(emailTmpl.telo) + '</div>';
+
+    var pendingBody = renderPendingUsersBox_();
+
     return '<div class="header"><h1>Nastavení</h1></div>' +
-      '<div class="settings-sub">Správa kategorií, checklistu, fotek a importu nových hráčů.</div>' +
+      '<div class="settings-sub">Správa kategorií, checklistu, fotek a importu nových hráčů. Klikněte na název sekce pro zobrazení podrobností.</div>' +
       '<div class="detail-grid">' +
-        '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title box-head">' + iconTag + '<span>Kategorie</span></span>' +
-          renderCategoryOverlapWarning_() +
-          '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
-            '<th></th><th>Kód</th><th>Zobrazit jako</th><th>Ročník od</th><th>Ročník do</th><th>Hráčů</th><th>Ve filtru</th><th>Smazat</th>' +
-          '</tr></thead><tbody>' + catRows + '</tbody></table></div>' +
-          '<div id="catPlayerLists"></div>' +
-          renderCategoryAddRow_() +
-          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
-            '<button class="icon-btn toolbar-btn" onclick="saveCategoryRules()">Uložit změny kategorií</button>' +
-            '<span id="catSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
-          '</div>' +
-          '<span class="phase-note">Ročník od/do se ukládá do listu "Kategorie" v tabulce (viditelné i pro ostatní). Barva, "zobrazit jako" a "Ve filtru" se zatím ukládají jen v tomto prohlížeči — list "Kategorie" má vedle sloupce s kategorií ještě nedokončený sloupec pro příští sezónu, který nechci přepisovat. Kategorie bez vlastního řádku (např. "Muži") se sem doplňují automaticky podle toho, co mají hráči vyplněné. Odškrtnutím "Ve filtru" kategorie zmizí z filtrů na úvodní stránce, hráči v ní zůstanou v seznamu beze změny.</span>' +
-        '</div>' +
-        '<div class="info-box">' +
-          '<span class="box-title box-head">' + iconList + '<span>Položky checklistu</span></span>' +
-          '<div class="cat-editor-wrap"><table class="cat-editor"><thead><tr>' +
-            '<th>Položka</th><th>Klíč</th><th>Aktivní</th>' +
-          '</tr></thead><tbody>' + checklistRows + '</tbody></table></div>' +
-          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
-            '<button class="icon-btn toolbar-btn" onclick="saveChecklistSettings()">Uložit checklist</button>' +
-            '<span id="checklistSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
-          '</div>' +
-          '<span class="phase-note">Neaktivní položky se u hráčů přestanou zobrazovat a nepočítají se do "kroků hotovo". Ukládá se jen v tomto prohlížeči (stejně jako u kategorií). Přidání nových položek přímo v appce bude v další verzi.</span>' +
-        '</div>' +
-        '<div class="info-box">' +
-          '<span class="box-title box-head">' + iconCamera + '<span>Fotky hráčů</span></span>' +
-          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Jednorázově naimportuje fotky ze složky "Fotky hráčů" na Disku pro všechny hráče, kteří ji ještě nemají. Nově přidaní hráči se pak řeší jednotlivě zaškrtnutím "FOTO PC".</div>' +
-          '<button class="icon-btn toolbar-btn" onclick="bulkImportAllPhotos()">Naimportovat fotky pro všechny hráče</button>' +
-          '<div id="bulkPhotoStatus" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>' +
-        '</div>' +
-        '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title box-head">' + iconUpload + '<span>Import nových hráčů z KIS (XLS export)</span></span>' +
-          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Vyberte soubor stažený z KIS notifikace. Záznamy se přidají do fronty "Noví uživatelé" níže — nic se nezapíše do tabulky, dokud je jednotlivě neschválíte.</div>' +
-          '<input type="file" id="importFileInput" accept=".xlsx,.xls">' +
-          '<div id="importPreview" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>' +
-        '</div>' +
-        '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title box-head">' + iconMail + '<span>Šablona uvítacího e-mailu</span></span>' +
-          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Tento text se pošle zástupci (nebo hráči, pokud e-mail zástupce chybí) po kliknutí na "Odeslat uvítací e-mail" u Nových uživatelů níže — jako <b>' + esc(FROM_EMAIL) + '</b>, s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '" na Disku. Stejný text pro všechny, nezávisle na jménu hráče. Formátování v textu: <code>**tučně**</code> pro tučné písmo, <code>*kurzívou*</code> pro kurzívu, a jakýkoliv odkaz začínající na http:// nebo https:// se automaticky změní na klikací. Náhled, jak bude vypadat, je pod polem.</div>' +
-          '<div style="display:flex;flex-direction:column;gap:8px;">' +
-            '<input type="text" id="emailTemplateSubject" placeholder="Předmět" value="' + esc(emailTmpl.predmet) + '" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;">' +
-            '<textarea id="emailTemplateBody" rows="12" placeholder="Tělo e-mailu" oninput="updateEmailTemplatePreview_()" style="padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:inherit;font-size:13px;resize:vertical;">' + esc(emailTmpl.telo) + '</textarea>' +
-          '</div>' +
-          '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
-            '<button class="icon-btn toolbar-btn" onclick="saveEmailTemplateFromUi_()">Uložit šablonu</button>' +
-            '<span id="emailTemplateSaveStatus" style="font-size:12px;color:var(--muted);"></span>' +
-          '</div>' +
-          '<div style="margin-top:12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Náhled</div>' +
-          '<div id="emailTemplatePreview" style="margin-top:6px;padding:12px;border-radius:8px;border:1px solid var(--border);background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">' + markdownLiteToHtml_(emailTmpl.telo) + '</div>' +
-        '</div>' +
-        '<div class="info-box" style="min-width:100%;">' +
-          '<span class="box-title box-head">' + iconUpload + '<span>Noví uživatelé</span></span>' +
-          renderPendingUsersBox_() +
-        '</div>' +
+        settingsBox_('kategorie', iconTag, 'Kategorie', kategorieBody, true) +
+        settingsBox_('checklist', iconList, 'Položky checklistu', checklistBody, false) +
+        settingsBox_('fotky', iconCamera, 'Fotky hráčů', fotkyBody, false) +
+        settingsBox_('import', iconUpload, 'Import nových hráčů z KIS (XLS export)', importBody, true) +
+        settingsBox_('email', iconMail, 'Šablona uvítacího e-mailu', emailBody, true) +
+        settingsBox_('pending', iconUpload, 'Noví uživatelé', pendingBody, true) +
       '</div>';
   }
 
