@@ -3767,8 +3767,12 @@
           if (i === -1) state.categories.push(cat); else state.categories.splice(i, 1);
         }
         // Stay on the map if the map is already open (so picking a category re-filters
-        // the markers in place); only detail view kicks back to the list.
-        if (state.view === 'detail') state.view = 'list';
+        // the markers in place). Detail and Vyřazení hráči kick back to the list — Vyřazení
+        // in particular has its own fixed roster that ignores state.categories entirely, so
+        // without this, picking another category while looking at Vyřazení hráči silently did
+        // nothing visible: the category got selected internally but the still-showing Vyřazení
+        // view never reflects it.
+        if (state.view === 'detail' || state.view === 'vyrazeni') state.view = 'list';
         renderCatList();
         render();
       });
