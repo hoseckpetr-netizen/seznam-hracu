@@ -286,13 +286,37 @@
        line below the logo/name fixes that and reads as a deliberate, tidy toolbar instead
        of an overflow accident. Also switches the player list to a responsive multi-column
        grid on wide screens instead of one long full-width column per row. */
+    /* Desktop player table (replaces the card list on wide screens — see the
+       min-width:761px block below). Built once here so both list views (Aktivní
+       hráči / Vyřazení hráči) can share the same look. Hidden by default (mobile/
+       tablet keep the card list, .player-table-wrap only becomes visible ≥761px). */
+    .player-table-wrap { display: none; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+    .player-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .player-table th { position: sticky; top: 0; background: var(--card); text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
+    .player-table td { padding: 7px 12px; border-bottom: 1px solid #20242a; vertical-align: middle; white-space: nowrap; }
+    .player-table tbody tr { cursor: pointer; transition: background .12s ease; }
+    .player-table tbody tr:hover { background: rgba(0,255,255,0.05); }
+    .player-table tbody tr:last-child td { border-bottom: none; }
+    .player-table .ring { width: 30px; height: 30px; }
+    .player-table .ring .ring-hole { font-size: 10px; }
+    .player-table .pt-name { font-weight: 600; }
+    .player-table .pt-num { font-variant-numeric: tabular-nums; color: var(--muted); }
+    .player-table .pt-sub { color: var(--muted); }
+    .player-table .chip { font-size: 11px; }
+    .player-table .pt-progress { display: flex; align-items: center; gap: 8px; }
+    .player-table .pt-progress-bar { width: 56px; height: 5px; border-radius: 999px; background: var(--border); overflow: hidden; flex-shrink: 0; }
+    .player-table .pt-progress-fill { height: 100%; border-radius: 999px; }
+    .player-table .pt-progress-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .player-table .pt-check-cell { width: 1%; }
+
     @media (min-width: 761px) {
       .brand { flex-wrap: wrap; row-gap: 10px; }
       .brand .icons { flex-basis: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
       .brand .icons .icon-btn { width: 100%; height: 32px; }
 
-      .player-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
-      .player-card { padding: 10px 14px; }
+      /* Swap the mobile/tablet card list for the dense, all-fields table. */
+      .player-list { display: none; }
+      .player-table-wrap { display: block; }
     }
   </style>
 </head>
@@ -1711,9 +1735,18 @@
         '<span class="pc-birth">Vyřazen<br><b>' + esc(p.datumVyrazeni || '—') + '</b></span>' +
       '</div>';
     }).join('');
+    var listHtml = players.length ?
+      ('<div class="player-list">' + rows + '</div>' +
+       playerTableHtml_(players, {
+         selectable: false,
+         showChecklist: false,
+         clickAction: function(p) { return 'openVyrazeniDetail(' + p.sheetRow + ')'; }
+       })) :
+      '<div class="loading">Žádní vyřazení hráči.</div>';
+
     return '<div class="header"><h1>Vyřazení hráči</h1><div class="count">' + players.length + ' hráčů</div></div>' +
       '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Přehled hráčů přesunutých v tabulce do listu "Vyřazené". Pouze pro čtení.</div>' +
-      '<div class="player-list">' + (rows || '<div class="loading">Žádní vyřazení hráči.</div>') + '</div>';
+      listHtml;
   }
   function openVyrazeniDetail(sheetRow) {
     var p = (DATA.vyrazeni || []).find(function(x) { return x.sheetRow === sheetRow; });
@@ -3403,6 +3436,49 @@
     });
   }
 
+  // Desktop-only dense table view (all fields in one row) that sits alongside the
+  // mobile/tablet card list in the DOM — CSS (≥761px) decides which one is visible,
+  // so both list views (Aktivní hráči / Vyřazení hráči) share one renderer here and
+  // the phone/tablet layout is completely untouched.
+  function playerTableHtml_(players, opts) {
+    opts = opts || {};
+    var selectable = !!opts.selectable;
+    var showChecklist = opts.showChecklist !== false;
+    var clickAction = opts.clickAction || function(p) { return 'openDetail(' + p.sheetRow + ')'; };
+    var rows = players.map(function(p) {
+      var c = checklistCounts(p);
+      var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+      var checkboxCell = selectable ?
+        ('<td class="pt-check-cell" onclick="event.stopPropagation();"><input type="checkbox" class="pc-check" onclick="toggleSelect(' + p.sheetRow + ')"' + (state.selected[p.sheetRow] ? ' checked' : '') + '></td>') : '';
+      var statusCell = showChecklist ?
+        ('<td><div class="pt-progress"><div class="pt-progress-bar"><div class="pt-progress-fill" style="width:' + pct + '%;background:' + esc(p.categoryColor) + '"></div></div><span class="pt-progress-label">' + (c.total > 0 && c.done === c.total ? 'Vše hotovo' : (c.done + '/' + c.total)) + '</span></div></td>') :
+        ('<td class="pt-num">' + esc(p.datumVyrazeni || '—') + '</td>');
+      return '<tr onclick="' + clickAction(p) + '">' +
+        checkboxCell +
+        '<td><div class="ring" style="' + ringStyle(showChecklist ? pct : 0, p.categoryColor) + '"><div class="ring-hole">' + avatarInnerHtml(p, 60) + '</div></div></td>' +
+        '<td class="pt-name">' + esc(p.jmenoCele) + '</td>' +
+        '<td><span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + '</span></td>' +
+        '<td class="pt-num">' + esc(p.datumNarozeni) + (p.vek ? ' <span class="pt-sub">(' + esc(p.vek) + ' let)</span>' : '') + '</td>' +
+        '<td class="pt-num">' + esc(p.id || '—') + '</td>' +
+        '<td class="pt-num">' + esc(formatRodneCislo_(p.rodneCislo) || '—') + '</td>' +
+        '<td>' + esc(addressLine_(p) || '—') + '</td>' +
+        '<td class="pt-num">' + esc(p.telefonHrac || '—') + '</td>' +
+        '<td>' + esc(p.emailHrac || '—') + '</td>' +
+        '<td>' + esc(p.zastupceJmeno || '—') + '</td>' +
+        '<td class="pt-num">' + esc(p.zastupceTelefon || '—') + '</td>' +
+        '<td>' + esc(p.zastupceEmail || '—') + '</td>' +
+        statusCell +
+      '</tr>';
+    }).join('');
+    var checkboxTh = selectable ? '<th></th>' : '';
+    var statusTh = showChecklist ? '<th>Checklist</th>' : '<th>Vyřazen</th>';
+    return '<div class="player-table-wrap"><table class="player-table"><thead><tr>' +
+      checkboxTh +
+      '<th></th><th>Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Telefon hráče</th><th>E-mail hráče</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
+      statusTh +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
   function renderListView() {
     var players = filteredPlayers();
     var selCount = Object.keys(state.selected).filter(function(k) { return state.selected[k]; }).length;
@@ -3430,9 +3506,18 @@
         '<button class="icon-btn toolbar-btn" onclick="toggleSelectMode()" style="margin-left:auto;">Hotovo</button>' +
       '</div>') : '';
 
+    var listHtml = players.length ?
+      ('<div class="player-list">' + rows + '</div>' +
+       playerTableHtml_(players, {
+         selectable: state.selectMode,
+         showChecklist: true,
+         clickAction: function(p) { return state.selectMode ? 'toggleSelect(' + p.sheetRow + ')' : 'openDetail(' + p.sheetRow + ')'; }
+       })) :
+      '<div class="loading">Žádní hráči neodpovídají filtru.</div>';
+
     return '<div class="header"><h1>Aktivní hráči</h1><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
       toolbar +
-      '<div class="player-list">' + (rows || '<div class="loading">Žádní hráči neodpovídají filtru.</div>') + '</div>';
+      listHtml;
   }
 
   function renderDetailView() {
