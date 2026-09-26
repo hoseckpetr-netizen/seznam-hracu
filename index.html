@@ -277,6 +277,23 @@
       .cat-editor input[type="text"], .cat-editor input[type="number"] { font-size: 11px; }
       .add-cat-grid { grid-template-columns: 1fr 1fr; }
     }
+
+    /* Desktop/tablet-landscape only (mirrors the ≤760px breakpoint above exactly, so
+       phone/portrait-tablet layout is completely untouched). Fixes a real overflow bug:
+       .brand (logo + name + 4 icon buttons) is wider than the 240px sidebar and had no
+       wrap, so it visually spilled out over the main content's "Aktivní hráči" header —
+       the icons/text overlap seen on desktop. Wrapping the icon row onto its own compact
+       line below the logo/name fixes that and reads as a deliberate, tidy toolbar instead
+       of an overflow accident. Also switches the player list to a responsive multi-column
+       grid on wide screens instead of one long full-width column per row. */
+    @media (min-width: 761px) {
+      .brand { flex-wrap: wrap; row-gap: 10px; }
+      .brand .icons { flex-basis: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      .brand .icons .icon-btn { width: 100%; height: 32px; }
+
+      .player-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+      .player-card { padding: 10px 14px; }
+    }
   </style>
 </head>
 <body>
