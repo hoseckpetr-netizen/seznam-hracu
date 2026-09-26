@@ -2519,12 +2519,12 @@
     return '<div class="header"><h1>Nastavení</h1></div>' +
       '<div class="settings-sub">Správa kategorií, checklistu, fotek a importu nových hráčů. Klikněte na název sekce pro zobrazení podrobností.</div>' +
       '<div class="detail-grid">' +
+        settingsBox_('import', iconUpload, 'Import nových hráčů z KIS (XLS export)', importBody, true) +
+        settingsBox_('pending', iconUpload, 'Noví uživatelé', pendingBody, true) +
         settingsBox_('kategorie', iconTag, 'Kategorie', kategorieBody, true) +
         settingsBox_('checklist', iconList, 'Položky checklistu', checklistBody, false) +
         settingsBox_('fotky', iconCamera, 'Fotky hráčů', fotkyBody, false) +
-        settingsBox_('import', iconUpload, 'Import nových hráčů z KIS (XLS export)', importBody, true) +
         settingsBox_('email', iconMail, 'Šablona uvítacího e-mailu', emailBody, true) +
-        settingsBox_('pending', iconUpload, 'Noví uživatelé', pendingBody, true) +
       '</div>';
   }
 
