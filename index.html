@@ -117,6 +117,17 @@
     .info-box.collapsed .settings-box-chevron { transform: rotate(-90deg); }
     .settings-box-body { display: flex; flex-direction: column; gap: 12px; }
     .info-box.collapsed .settings-box-body { display: none; }
+    .pending-box { font-size: 12px; background: #12151a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    .pending-box-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; cursor: pointer; background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; }
+    .pending-box-head:hover { color: var(--text); }
+    .pending-box-head-main { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pending-box-head-main b { color: var(--accent); }
+    .pending-box-chevron { transition: transform .15s ease; flex-shrink: 0; color: var(--muted); }
+    .pending-box.collapsed .pending-box-chevron { transform: rotate(-90deg); }
+    .pending-box-body { display: flex; flex-direction: column; margin-top: 8px; }
+    .pending-box-body div { padding: 2px 0; }
+    .pending-box-body b { color: var(--accent); }
+    .pending-box.collapsed .pending-box-body { display: none; }
     .cat-editor-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 0 20px; }
     .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
     .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -2858,6 +2869,22 @@
   // row is marked "Hotovo". Keyed by the pending row's sheetRow (in "Čekající"), which stays
   // stable across a "Čeká" → "Přidáno" → "Hotovo" transition.
   var pendingRowNotes_ = {};
+  // Whether each pending-user card is expanded. Explicit true/false once the admin has toggled
+  // it; otherwise defaults to open for "Čeká" (still needs a decision) and collapsed for
+  // "Přidáno" (already handled, just a compact follow-up reminder) — see pendingBoxOpen_.
+  var pendingExpanded_ = {};
+  function pendingBoxOpen_(p) {
+    if (pendingExpanded_.hasOwnProperty(p.sheetRow)) return pendingExpanded_[p.sheetRow];
+    return p.stav !== 'Přidáno';
+  }
+  function togglePendingBox_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var open = !pendingBoxOpen_(p);
+    pendingExpanded_[sheetRow] = open;
+    var box = document.querySelector('.pending-box[data-pending-row="' + sheetRow + '"]');
+    if (box) box.classList.toggle('collapsed', !open);
+  }
 
   function pendingBadgeCount_() {
     // Nastavení is admin-only (renderSettingsView blocks it entirely for a viewer), so the
@@ -2890,19 +2917,29 @@
         ('<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
          '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
          '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>');
-      return '<div class="diff-summary">' +
-        (isAdded ? '<div style="color:var(--green);font-size:11px;font-weight:700;margin-bottom:5px;">&#10003; PŘIDÁNO DO TABULKY — zbývá odeslat uvítací e-mail</div>' : '') +
-        '<div><b>' + esc(p.jmenoCele) + '</b> · narozen ' + esc(p.datumNarozeni) + '</div>' +
-        (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
-        '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
-        '<div>Hráč: ' + esc(formatPhoneForContact_(p.telefonHrac) || p.telefonHrac || '—') + ' · ' + esc(p.emailHrac || '—') + '</div>' +
-        '<div>Zástupce: ' + esc(p.zastupceJmeno || '—') + ' · ' + esc(formatPhoneForContact_(p.zastupceTelefon) || p.zastupceTelefon || '—') + ' · ' + esc(p.zastupceEmail || '—') + '</div>' +
-        (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
-        (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
-        (note ? '<div style="margin-top:4px;">' + esc(note) + '</div>' : '') +
-        '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
-        '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
-          actionsHtml +
+      var open = pendingBoxOpen_(p);
+      var chevron = '<svg class="pending-box-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      return '<div class="pending-box' + (open ? '' : ' collapsed') + '" data-pending-row="' + p.sheetRow + '">' +
+        '<button type="button" class="pending-box-head" onclick="togglePendingBox_(' + p.sheetRow + ')">' +
+          '<span class="pending-box-head-main">' +
+            (isAdded ? '<span style="color:var(--green);flex-shrink:0;">&#10003;</span>' : '') +
+            '<b>' + esc(p.jmenoCele) + '</b><span style="color:var(--muted);">narozen ' + esc(p.datumNarozeni) + '</span>' +
+          '</span>' +
+          chevron +
+        '</button>' +
+        '<div class="pending-box-body">' +
+          (isAdded ? '<div style="color:var(--green);font-size:11px;font-weight:700;margin-bottom:5px;">&#10003; PŘIDÁNO DO TABULKY — zbývá odeslat uvítací e-mail</div>' : '') +
+          (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
+          '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
+          '<div>Hráč: ' + esc(formatPhoneForContact_(p.telefonHrac) || p.telefonHrac || '—') + ' · ' + esc(p.emailHrac || '—') + '</div>' +
+          '<div>Zástupce: ' + esc(p.zastupceJmeno || '—') + ' · ' + esc(formatPhoneForContact_(p.zastupceTelefon) || p.zastupceTelefon || '—') + ' · ' + esc(p.zastupceEmail || '—') + '</div>' +
+          (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
+          (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
+          (note ? '<div style="margin-top:4px;">' + esc(note) + '</div>' : '') +
+          '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
+          '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
+            actionsHtml +
+          '</div>' +
         '</div>' +
       '</div>';
     }).join('');
