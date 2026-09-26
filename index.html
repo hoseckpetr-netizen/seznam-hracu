@@ -156,6 +156,8 @@
     .copy-btn.copied { color: var(--green); }
     .info-value { display: inline-flex; align-items: center; gap: 6px; }
     .detail-id { font-size: 11px; font-weight: 500; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; margin-left: 8px; vertical-align: middle; }
+    .detail-id-link { cursor: pointer; }
+    .detail-id-link:hover { color: var(--accent); border-color: var(--accent); }
 
     /* Notification bell */
     .notif-panel { display: none; position: absolute; top: 44px; right: 0; width: 300px; max-height: 360px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 6px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
@@ -576,6 +578,26 @@
     } else {
       fallbackCopy(text); done();
     }
+  }
+
+  // IS FAČR ("is.fotbal.cz") has no public permalink for a player's card — its detail-page URL
+  // uses an internal "req" token that can only be obtained by searching through their own form,
+  // never derived from the FAČR ID. So the closest we can offer: open their search page in a new
+  // window/tab and copy the FAČR ID to the clipboard, so the user just has to paste it into the
+  // "ID člena" field there and hit Hledej.
+  var FACR_SEARCH_URL = 'https://is.fotbal.cz/public/hraci/hraci-prehled/?sport=fotbal';
+  function openFacrLookup_(id) {
+    if (!id) return;
+    function copyOnly() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(id).catch(function() { fallbackCopy(id); });
+      } else {
+        fallbackCopy(id);
+      }
+    }
+    copyOnly();
+    window.open(FACR_SEARCH_URL, '_blank', 'noopener');
+    pushNotification('FAČR ID ' + id + ' zkopírováno do schránky. Ve vyhledávači FAČR ho vložte (Ctrl+V) do pole "ID člena" a klikněte na Hledej.', 'info');
   }
 
   // ---------- Player photos (Google Drive "Fotky hráčů" folder) ----------
@@ -3149,7 +3171,7 @@
         '<div class="detail-info">' +
           '<div class="detail-name-row">' +
             '<div class="detail-name">' + esc(p.jmenoCele) + '</div>' +
-            (p.id ? '<div class="detail-meta-row"><span class="detail-id">FAČR ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) + '</div>' : '') +
+            (p.id ? '<div class="detail-meta-row"><span class="detail-id detail-id-link" onclick="event.stopPropagation(); openFacrLookup_(\'' + jsStr(p.id) + '\')" title="Otevřít vyhledávání FAČR (ID se zkopíruje do schránky)" role="button" tabindex="0">FAČR ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) + '</div>' : '') +
           '</div>' +
           '<div class="detail-meta">' +
             '<div class="detail-meta-row">' +
