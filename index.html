@@ -1831,6 +1831,7 @@
   var EDIT_FIELD_LABELS = { id: 'FAČR ID', rodneCislo: 'Rodné číslo', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
 
   function openEditModal(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     document.getElementById('modalBox').innerHTML = editFormHtml(p);
@@ -1866,6 +1867,7 @@
       '</div>';
   }
   function reviewEdits(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     var changes = {};
@@ -1893,6 +1895,7 @@
     document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
   }
   function saveEditsToSheet(sheetRow, changes) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     var area = document.getElementById('editDiffArea');
     if (!p || !DATA.colIndex) { area.innerHTML = '<div class="diff-summary">Chyba: chybí informace o sloupcích.</div>'; return; }
@@ -2658,6 +2661,7 @@
   }
 
   function handleImportFile(e) {
+    if (!DATA || DATA.role !== 'admin') return;
     var file = e.target.files && e.target.files[0];
     if (!file) return;
     var statusEl = document.getElementById('importPreview');
@@ -2755,7 +2759,10 @@
   var pendingRowNotes_ = {};
 
   function pendingBadgeCount_() {
-    return (DATA && DATA.pending) ? DATA.pending.filter(function(p) { return p.stav === 'Čeká' || p.stav === 'Přidáno'; }).length : 0;
+    // Nastavení is admin-only (renderSettingsView blocks it entirely for a viewer), so the
+    // badge would just tease something they can't open — only show it for the admin.
+    if (!DATA || DATA.role !== 'admin' || !DATA.pending) return 0;
+    return DATA.pending.filter(function(p) { return p.stav === 'Čeká' || p.stav === 'Přidáno'; }).length;
   }
   function updateSettingsBadge_() {
     var badge = document.getElementById('settingsBadge');
@@ -2801,6 +2808,7 @@
   }
 
   function confirmAddPendingUser(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     var hasGuardian = !!(p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon);
@@ -2817,6 +2825,7 @@
   }
 
   function applyAddPendingUser_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p || !DATA.colIndex) return;
     var maxRow = DATA.players.reduce(function(m, x) { return Math.max(m, x.sheetRow); }, DATA.headerRowIdx + 1);
@@ -2890,6 +2899,7 @@
   // Lets Petr retry Google-contact creation for a player already added to the sheet, without
   // re-running the whole "Přidat do tabulky" flow (which would duplicate the sheet row).
   function retryCreateContacts_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     pushNotification('Vytvářím Google kontakty pro ' + p.jmenoCele + '…', 'info');
@@ -2905,6 +2915,7 @@
   }
 
   function confirmMarkPendingDone(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     document.getElementById('modalBox').innerHTML =
@@ -2918,6 +2929,7 @@
   }
 
   function applyMarkPendingDone_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p || !DATA.pendingColIndex) return;
     var pIdx = DATA.pendingColIndex;
@@ -2942,6 +2954,7 @@
   }
 
   function confirmRejectPendingUser(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     document.getElementById('modalBox').innerHTML =
@@ -2955,6 +2968,7 @@
   }
 
   function applyRejectPendingUser_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p || !DATA.pendingColIndex) return;
     var pIdx = DATA.pendingColIndex;
@@ -3097,6 +3111,7 @@
   // Writes the template into the "Email" tab, creating that tab first if this is the very
   // first save (mirrors how "Čekající" was created — never assumed to already exist).
   function saveEmailTemplate_(predmet, telo) {
+    if (!DATA || DATA.role !== 'admin') return Promise.reject(new Error('Nemáte oprávnění upravovat šablonu e-mailu.'));
     var payload = { valueInputOption: 'RAW', data: [
       { range: EMAIL_SHEET + '!A1:B2', values: [['Předmět', predmet], ['Tělo', telo]] }
     ] };
@@ -3132,6 +3147,7 @@
     if (bodyEl && previewEl) previewEl.innerHTML = markdownLiteToHtml_(bodyEl.value);
   }
   function saveEmailTemplateFromUi_() {
+    if (!DATA || DATA.role !== 'admin') return;
     var subjEl = document.getElementById('emailTemplateSubject');
     var bodyEl = document.getElementById('emailTemplateBody');
     var statusEl = document.getElementById('emailTemplateSaveStatus');
@@ -3290,6 +3306,7 @@
     });
   }
   function confirmSendWelcomeEmail(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     var to = (p.zastupceEmail || p.emailHrac || '').trim();
@@ -3307,6 +3324,7 @@
     document.getElementById('modalOverlay').classList.add('open');
   }
   function applySendWelcomeEmail_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
     pushNotification('Odesílám uvítací e-mail pro ' + p.jmenoCele + '…', 'info');
