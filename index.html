@@ -188,6 +188,23 @@
     ::-webkit-scrollbar { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+    /* Toast confirmations (visible feedback for actions — separate from the notification bell,
+       which requires clicking the bell to see anything). Stacks bottom-right, auto-dismisses. */
+    .toast-host { position: fixed; bottom: 18px; right: 18px; z-index: 200; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+    .toast { display: flex; align-items: flex-start; gap: 10px; background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 10px; padding: 12px 14px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); animation: toastIn .2s ease; }
+    .toast.warn { border-left-color: #FBBF24; }
+    .toast.error { border-left-color: var(--red); }
+    .toast.closing { animation: toastOut .2s ease forwards; }
+    .toast .toast-icon { flex-shrink: 0; margin-top: 1px; }
+    .toast .toast-text { flex: 1; line-height: 1.4; }
+    .toast .toast-close { flex-shrink: 0; background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: 15px; line-height: 1; }
+    .toast .toast-close:hover { color: var(--text); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(4px); } }
+    @media (max-width: 760px) {
+      .toast-host { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+    }
+
     /* Selection / sharing toolbar */
     .toolbar-btn { width: auto; padding: 8px 14px; font-size: 12px; white-space: nowrap; font-family: inherit; }
     .toolbar-btn:disabled { opacity: .4; cursor: default; }
@@ -284,9 +301,12 @@
             </button>
             <div id="notifPanel" class="notif-panel"></div>
           </div>
-          <button class="icon-btn" type="button" onclick="openSettings()" aria-label="Nastavení" title="Nastavení">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          </button>
+          <div style="position:relative;">
+            <button class="icon-btn" type="button" onclick="openSettings()" aria-label="Nastavení" title="Nastavení">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+            <span id="settingsBadge" style="display:none;position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--red);"></span>
+          </div>
         </div>
       </div>
       <div class="season" id="season">Načítám…</div>
@@ -329,6 +349,7 @@
 
   <div id="printArea"></div>
   <div id="modalOverlay" class="modal-overlay"><div class="modal-box" id="modalBox"></div></div>
+  <div id="toastHost" class="toast-host"></div>
 
 <script>
   // ---------- Config ----------
@@ -763,6 +784,29 @@
     notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2, 7), text: text, type: type || 'info', ts: new Date().toISOString(), read: false });
     saveNotifications();
     renderBell();
+    showToast_(text, type);
+  }
+  // A visible, self-dismissing confirmation for every pushNotification — the bell icon alone is
+  // easy to miss (it just increments a small unread dot), so actions like "hráč přidán do
+  // tabulky" need something impossible to overlook, especially on a phone screen.
+  function showToast_(text, type) {
+    var host = document.getElementById('toastHost');
+    if (!host) return;
+    var el = document.createElement('div');
+    el.className = 'toast' + (type === 'warn' ? ' warn' : type === 'error' ? ' error' : '');
+    var icon = type === 'error' ? '<span style="color:var(--red);">&#9888;</span>' : type === 'warn' ? '<span style="color:#FBBF24;">&#9888;</span>' : '<span style="color:var(--green);">&#10003;</span>';
+    el.innerHTML = '<span class="toast-icon">' + icon + '</span><span class="toast-text"></span><button type="button" class="toast-close" aria-label="Zavřít">&#10005;</button>';
+    el.querySelector('.toast-text').textContent = text;
+    function dismiss() {
+      if (!el.parentNode) return;
+      el.classList.add('closing');
+      setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 200);
+    }
+    el.querySelector('.toast-close').onclick = dismiss;
+    host.appendChild(el);
+    setTimeout(dismiss, type === 'error' ? 8000 : 5000);
+    // Cap the stack so a burst of notifications (e.g. bulk photo import) doesn't fill the screen.
+    while (host.children.length > 4) host.removeChild(host.firstChild);
   }
   function unreadNotifCount() {
     return notifications.filter(function(n) { return !n.read; }).length;
@@ -2696,14 +2740,42 @@
     };
   }
 
+  // Session-only notes per pending row (e.g. "Google kontakty: hráč, zástupce selhal: ...") —
+  // not written to the sheet, just shown next to the row until the page is reloaded or the
+  // row is marked "Hotovo". Keyed by the pending row's sheetRow (in "Čekající"), which stays
+  // stable across a "Čeká" → "Přidáno" → "Hotovo" transition.
+  var pendingRowNotes_ = {};
+
+  function pendingBadgeCount_() {
+    return (DATA && DATA.pending) ? DATA.pending.filter(function(p) { return p.stav === 'Čeká' || p.stav === 'Přidáno'; }).length : 0;
+  }
+  function updateSettingsBadge_() {
+    var badge = document.getElementById('settingsBadge');
+    if (badge) badge.style.display = pendingBadgeCount_() > 0 ? 'block' : 'none';
+  }
+
   function renderPendingUsersBox_() {
-    var rows = (DATA.pending || []).filter(function(p) { return p.stav === 'Čeká'; });
+    // "Čeká" (needs a decision) is shown before "Přidáno" (already in the sheet, just waiting
+    // on the welcome e-mail / Google contacts to be finished off) — nothing here disappears
+    // the moment "Přidat do tabulky" succeeds, only once explicitly marked "Hotovo".
+    var rows = (DATA.pending || []).filter(function(p) { return p.stav === 'Čeká' || p.stav === 'Přidáno'; })
+      .slice().sort(function(a, b) { return (a.stav === 'Čeká' ? 0 : 1) - (b.stav === 'Čeká' ? 0 : 1); });
     if (!rows.length) {
       return '<div style="font-size:12px;color:var(--muted);">Žádní čekající noví uživatelé. Nahrajte soubor z KIS výše.</div>';
     }
     return rows.map(function(p) {
       var addressLine = [p.ulice, p.cp].filter(Boolean).join(' ') + (p.mesto ? (p.ulice || p.cp ? ', ' : '') + p.mesto : '') + (p.psc ? ' ' + p.psc : '');
+      var isAdded = p.stav === 'Přidáno';
+      var note = pendingRowNotes_[p.sheetRow];
+      var actionsHtml = isAdded ?
+        ('<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
+         '<button class="icon-btn toolbar-btn" onclick="retryCreateContacts_(' + p.sheetRow + ')">Vytvořit Google kontakty znovu</button>' +
+         '<button class="icon-btn toolbar-btn" onclick="confirmMarkPendingDone(' + p.sheetRow + ')">Hotovo</button>') :
+        ('<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
+         '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
+         '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>');
       return '<div class="diff-summary">' +
+        (isAdded ? '<div style="color:var(--green);font-size:11px;font-weight:700;margin-bottom:5px;">&#10003; PŘIDÁNO DO TABULKY — zbývá odeslat uvítací e-mail</div>' : '') +
         '<div><b>' + esc(p.jmenoCele) + '</b> · narozen ' + esc(p.datumNarozeni) + '</div>' +
         (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
         '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
@@ -2711,11 +2783,10 @@
         '<div>Zástupce: ' + esc(p.zastupceJmeno || '—') + ' · ' + esc(formatPhoneForContact_(p.zastupceTelefon) || p.zastupceTelefon || '—') + ' · ' + esc(p.zastupceEmail || '—') + '</div>' +
         (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
         (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
+        (note ? '<div style="margin-top:4px;">' + esc(note) + '</div>' : '') +
         '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
         '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
-          '<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
-          '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
-          '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>' +
+          actionsHtml +
         '</div>' +
       '</div>';
     }).join('');
@@ -2798,10 +2869,65 @@
       pushNotification('Hráč ' + p.jmenoCele + ' přidán do tabulky (řádek ' + targetRow + '). Zkontrolujte prosím FAČR ID a kategorii přímo v tabulce.', 'info');
       return createContactsForPendingUser_(p);
     }).then(function(contactSummary) {
-      if (contactSummary) pushNotification(contactSummary, 'info');
+      pendingRowNotes_[p.sheetRow] = contactSummary || 'Google kontakty: nebylo co vytvořit (chybí jméno nebo kontaktní údaje).';
+      pushNotification(pendingRowNotes_[p.sheetRow], /selhal/.test(pendingRowNotes_[p.sheetRow]) ? 'warn' : 'info');
       loadData();
     }).catch(function(err) {
       pushNotification('Přidání hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+    });
+  }
+
+  // Lets Petr retry Google-contact creation for a player already added to the sheet, without
+  // re-running the whole "Přidat do tabulky" flow (which would duplicate the sheet row).
+  function retryCreateContacts_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    pushNotification('Vytvářím Google kontakty pro ' + p.jmenoCele + '…', 'info');
+    createContactsForPendingUser_(p).then(function(contactSummary) {
+      pendingRowNotes_[p.sheetRow] = contactSummary || 'Google kontakty: nebylo co vytvořit (chybí jméno nebo kontaktní údaje).';
+      pushNotification(pendingRowNotes_[p.sheetRow], /selhal/.test(pendingRowNotes_[p.sheetRow]) ? 'warn' : 'info');
+      render();
+    }).catch(function(err) {
+      pendingRowNotes_[p.sheetRow] = 'Vytvoření Google kontaktů selhalo: ' + err.message;
+      pushNotification('Vytvoření Google kontaktů pro ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
+      render();
+    });
+  }
+
+  function confirmMarkPendingDone(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Označit <b>' + esc(p.jmenoCele) + '</b> jako vyřízeného? Zmizí ze seznamu čekajících v Nastavení — hráč zůstává v tabulce "Seznam".</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyMarkPendingDone_(' + sheetRow + ')">Hotovo</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function applyMarkPendingDone_(sheetRow) {
+    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p || !DATA.pendingColIndex) return;
+    var pIdx = DATA.pendingColIndex;
+    var pdataArr = [{ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.stav) + p.sheetRow, values: [['Hotovo']] }];
+    if (pIdx.datumVyrizeni != null && pIdx.datumVyrizeni >= 0) {
+      pdataArr.push({ range: PENDING_SHEET + '!' + colIndexToLetter(pIdx.datumVyrizeni) + p.sheetRow, values: [[formatDateCz_()]] });
+    }
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: pdataArr })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      delete pendingRowNotes_[p.sheetRow];
+      pushNotification(p.jmenoCele + ' označen jako vyřízený.', 'info');
+      loadData();
+    }).catch(function(err) {
+      pushNotification('Označení záznamu ' + p.jmenoCele + ' jako vyřízeného selhalo: ' + err.message, 'error');
     });
   }
 
@@ -3352,6 +3478,7 @@
     if (catListEl) catListEl.style.display = (state.view === 'settings') ? 'none' : '';
     var selectModeBtnEl = document.getElementById('selectModeBtn');
     if (selectModeBtnEl) selectModeBtnEl.classList.toggle('active', state.selectMode);
+    updateSettingsBadge_();
 
     // Note: the Filtr/Sdílet dropdown panels are deliberately NOT re-rendered here on every
     // render() call — rebuilding the search <input> on each keystroke would reset its cursor
