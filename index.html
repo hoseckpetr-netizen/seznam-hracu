@@ -128,6 +128,10 @@
     .pending-box-body div { padding: 2px 0; }
     .pending-box-body b { color: var(--accent); }
     .pending-box.collapsed .pending-box-body { display: none; }
+    /* Keep the action buttons on one row even on a narrow phone — divide the row evenly instead
+       of letting a button wrap onto a second line, wrapping its own label text if needed. */
+    .pending-box-body .modal-actions { flex-wrap: nowrap; gap: 6px; }
+    .pending-box-body .modal-actions button { flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: 11px; white-space: normal; line-height: 1.25; }
     .cat-editor-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 0 20px; }
     .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
     .cat-editor th { text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
