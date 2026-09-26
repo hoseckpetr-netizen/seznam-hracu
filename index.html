@@ -2624,8 +2624,13 @@
   }
   // Used only for the Google Contact's phone number (a different, human-dialable shape than
   // the bare digits kept in the sheet) — the sheet's own value is left exactly as normalized.
+  // Coerced to a string up front: a pure-digit phone number written to Sheets without forcing
+  // text comes back from the Sheets API as a JS number, not a string, and the People API
+  // rejects a bare number for a text field ("Invalid value ... (TYPE_STRING)") — this makes the
+  // function safe however the value comes in, without needing to fix the sheet cell itself.
   function formatPhoneForContact_(digitsOnly) {
-    if (!digitsOnly) return '';
+    if (digitsOnly === null || digitsOnly === undefined || digitsOnly === '') return '';
+    digitsOnly = String(digitsOnly);
     if (digitsOnly.length === 9) return '+420 ' + digitsOnly.slice(0, 3) + ' ' + digitsOnly.slice(3, 6) + ' ' + digitsOnly.slice(6);
     return digitsOnly;
   }
@@ -2681,9 +2686,12 @@
         var rowsToAppend = fresh.map(function(c) {
           // Leading apostrophe forces plain text — otherwise Sheets auto-detects "D.M.RRRR"
           // as a date and silently stores a date serial instead of the literal string.
+          // Same reasoning for phone numbers: a bare digit string like "731179719" would
+          // otherwise be auto-detected as a number, which later breaks Google Contacts creation
+          // (the People API rejects a number where it expects a text phone value).
           return [c.jmeno, c.prijmeni, (c.datumNarozeni ? "'" + c.datumNarozeni : ''), c.rok, (c.rodneCislo ? "'" + c.rodneCislo : ''),
-            c.emailHrac, c.telefonHrac, c.ulice, c.cp, c.mesto, c.psc,
-            c.zastupceJmeno, c.zastupceEmail, c.zastupceTelefon,
+            c.emailHrac, (c.telefonHrac ? "'" + c.telefonHrac : ''), c.ulice, c.cp, c.mesto, c.psc,
+            c.zastupceJmeno, c.zastupceEmail, (c.zastupceTelefon ? "'" + c.zastupceTelefon : ''),
             c.poznamka, c.zdravotniOmezeni, 'Čeká', today, '', file.name];
         });
         fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(PENDING_SHEET + '!A1') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
@@ -2832,9 +2840,11 @@
     put('mesto', p.mesto);
     put('psc', p.psc);
     put('emailHrac', p.emailHrac);
-    put('telefonHrac', p.telefonHrac);
+    // Force text — same reason as datumNarozeni/rodneCislo above: a bare digit string would
+    // otherwise become a number in the sheet, which later breaks Google Contacts creation.
+    put('telefonHrac', p.telefonHrac, true);
     put('zastupceJmeno', p.zastupceJmeno);
-    put('zastupceTelefon', p.zastupceTelefon);
+    put('zastupceTelefon', p.zastupceTelefon, true);
     put('zastupceEmail', p.zastupceEmail);
     put('datumPridani', formatDateCz_());
     var regKisCol = idx.checklistCols && idx.checklistCols['REG KIS'];
