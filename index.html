@@ -22,10 +22,10 @@
     .icon-btn:disabled { opacity: .45; cursor: default; }
     .season { font-size: 11px; color: var(--muted); }
     .cat-list { display: flex; flex-direction: column; gap: 2px; }
-    .sidebar-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-    .sidebar-tools .toolbar-btn { width: 100%; height: 30px; min-height: 0; min-width: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 2px; font-size: 9px; white-space: normal; text-align: center; line-height: 1.05; overflow: hidden; }
-    .sidebar-tools .toolbar-btn svg { width: 12px; height: 12px; }
-    .sidebar-tools .toolbar-btn svg { flex-shrink: 0; }
+    .sidebar-tools { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .sidebar-tools .toolbar-btn { width: 100%; height: 30px; min-height: 0; min-width: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 2px; overflow: hidden; }
+    .sidebar-tools .toolbar-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .sidebar-tools .toolbar-btn.active { background: rgba(0,255,255,0.12); border-color: var(--accent); color: var(--accent); }
     .notif-panel .notif-row.clickable { cursor: pointer; }
     .notif-panel .notif-row.clickable:hover { background: rgba(0,255,255,0.08); }
     .filter-panel-inner { padding: 10px; display: flex; flex-direction: column; gap: 7px; }
@@ -286,24 +286,29 @@
         <div style="position:relative;">
           <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('share', this)" aria-label="Sdílet" title="Sdílet">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-            Sdílet
           </button>
           <div id="sharePanel" class="notif-panel" style="width:230px;"></div>
         </div>
+        <button class="icon-btn toolbar-btn" type="button" id="selectModeBtn" onclick="toggleSelectMode()" aria-label="Vybrat" title="Vybrat hráče">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+        </button>
         <div style="position:relative;">
           <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('filter', this)" aria-label="Filtr" title="Filtr">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-            Filtr
           </button>
           <div id="filterPanel" class="notif-panel" style="width:264px;"></div>
         </div>
+        <div style="position:relative;">
+          <button class="icon-btn toolbar-btn" type="button" onclick="toggleSidebarPanel('sort', this)" aria-label="Seřadit" title="Seřadit">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg>
+          </button>
+          <div id="sortPanel" class="notif-panel" style="width:230px;"></div>
+        </div>
         <button class="icon-btn toolbar-btn" type="button" onclick="resetSidebarFilters()" aria-label="Zrušit filtr" title="Zrušit filtr">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-          Zrušit filtr
         </button>
         <button class="icon-btn toolbar-btn" type="button" onclick="refreshAppData()" aria-label="Aktualizovat" title="Aktualizovat data i fotky">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-          Aktualizovat
         </button>
       </div>
       <div class="role-badge" id="roleBadge"></div>
@@ -420,7 +425,7 @@
   // categories: [] means "Vše" (no filter); otherwise a player must be in one of the listed
   // categories (an OR filter — e.g. ['U11','U12'] shows both groups at once).
   var state = { categories: [], rok: 'Vše', city: 'Vše', q: '', view: 'list', selectedRow: null, selectMode: false, selected: {},
-    missingAnyStep: false, noPhoto: false, checklistKey: '', checklistStatus: 'nesplneno' };
+    missingAnyStep: false, noPhoto: false, checklistKey: '', checklistStatus: 'nesplneno', sortKey: '', sortDir: 'asc' };
   var tokenClient = null;
   var accessToken = null;
   var mapInstance = null, markersLayer = [], geocodeCache = {}, mapLoadToken = 0;
@@ -760,7 +765,7 @@
   }
   // ---------- Sidebar Sdílet / Filtr dropdown panels ----------
   function toggleSidebarPanel(which, btn) {
-    var ids = { share: 'sharePanel', filter: 'filterPanel' };
+    var ids = { share: 'sharePanel', filter: 'filterPanel', sort: 'sortPanel' };
     Object.keys(ids).forEach(function(key) {
       var el = document.getElementById(ids[key]);
       if (!el) return;
@@ -772,6 +777,7 @@
           el.style.display = 'block';
           if (key === 'filter') renderFilterPanel();
           if (key === 'share') renderSharePanel();
+          if (key === 'sort') renderSortPanel();
           if (btn) positionDropdownPanel_(el, btn);
         }
       } else {
@@ -1417,7 +1423,7 @@
   }
 
   function filteredPlayers() {
-    return DATA.players.filter(function(p) {
+    var result = DATA.players.filter(function(p) {
       if (state.categories.length && state.categories.indexOf(p.categoryGroup) === -1) return false;
       if (state.rok !== 'Vše' && String(p.rok) !== state.rok) return false;
       if (state.city !== 'Vše' && p.mesto !== state.city) return false;
@@ -1431,6 +1437,68 @@
       }
       return true;
     });
+    return sortPlayersList_(result);
+  }
+
+  // ---------- Seřadit (sort) ----------
+  // A separate concern from filtering above — it never removes players, only reorders them.
+  // "Podle kategorie" sorts by each category's own "Ročník od" (birth-year lower bound) rather
+  // than alphabetically, so U8/U9/U10/… come out in an actual age order instead of text order
+  // (categories without a year range, e.g. "Muži"/"Nezařazeno", sort to the end either way).
+  function checklistFraction_(p) {
+    var c = checklistCounts(p);
+    return c.total ? (c.done / c.total) : 0;
+  }
+  function categorySortWeight_(label) {
+    var rule = (DATA.categoryRules || []).find(function(r) { return r.label === label; });
+    return (rule && rule.from != null) ? rule.from : 99999;
+  }
+  function sortComparator_(key) {
+    if (key === 'vek') return function(a, b) { return (parseFloat(a.vek) || 0) - (parseFloat(b.vek) || 0); };
+    if (key === 'checklist') return function(a, b) { return checklistFraction_(a) - checklistFraction_(b); };
+    if (key === 'kategorie') return function(a, b) {
+      return categorySortWeight_(a.categoryGroup) - categorySortWeight_(b.categoryGroup) ||
+        (a.categoryGroup || '').localeCompare(b.categoryGroup || '', 'cs');
+    };
+    if (key === 'prijmeni') return function(a, b) { return (a.prijmeni || '').localeCompare(b.prijmeni || '', 'cs', { sensitivity: 'base' }); };
+    return null;
+  }
+  function sortPlayersList_(players) {
+    var cmp = sortComparator_(state.sortKey);
+    if (!cmp) return players;
+    var sorted = players.slice().sort(cmp);
+    if (state.sortDir === 'desc') sorted.reverse();
+    return sorted;
+  }
+  function renderSortPanel() {
+    var el = document.getElementById('sortPanel');
+    if (!el) return;
+    el.innerHTML = '<div class="filter-panel-inner">' +
+        '<select id="sortKeySelect">' +
+          '<option value=""' + (!state.sortKey ? ' selected' : '') + '>Bez řazení</option>' +
+          '<option value="vek"' + (state.sortKey === 'vek' ? ' selected' : '') + '>Podle věku</option>' +
+          '<option value="checklist"' + (state.sortKey === 'checklist' ? ' selected' : '') + '>Podle stavu checklistu</option>' +
+          '<option value="kategorie"' + (state.sortKey === 'kategorie' ? ' selected' : '') + '>Podle kategorie</option>' +
+          '<option value="prijmeni"' + (state.sortKey === 'prijmeni' ? ' selected' : '') + '>Podle abecedy (příjmení)</option>' +
+        '</select>' +
+        '<div class="fp-row-2">' +
+          '<button type="button" class="fp-toggle-btn' + (state.sortDir === 'asc' ? ' active' : '') + '" onclick="setSortDir_(\'asc\')">Vzestupně</button>' +
+          '<button type="button" class="fp-toggle-btn' + (state.sortDir === 'desc' ? ' active' : '') + '" onclick="setSortDir_(\'desc\')">Sestupně</button>' +
+        '</div>' +
+        '<a href="javascript:void(0)" class="fp-reset" onclick="resetSort_()">Zrušit řazení</a>' +
+      '</div>';
+    document.getElementById('sortKeySelect').addEventListener('change', function(e) { state.sortKey = e.target.value; render(); renderSortPanel(); });
+  }
+  function setSortDir_(dir) {
+    state.sortDir = dir;
+    render();
+    renderSortPanel();
+  }
+  function resetSort_() {
+    state.sortKey = '';
+    state.sortDir = 'asc';
+    render();
+    renderSortPanel();
   }
 
   function openDetail(sheetRow) {
@@ -3159,7 +3227,7 @@
     if (sidebarToolsEl) {
       sidebarToolsEl.style.display = hideSidebarChrome ? 'none' : 'grid';
       if (hideSidebarChrome) {
-        ['sharePanel', 'filterPanel'].forEach(function(id) {
+        ['sharePanel', 'filterPanel', 'sortPanel'].forEach(function(id) {
           var p = document.getElementById(id);
           if (p) p.style.display = 'none';
         });
@@ -3167,6 +3235,8 @@
     }
     var catListEl = document.getElementById('catList');
     if (catListEl) catListEl.style.display = (state.view === 'settings') ? 'none' : '';
+    var selectModeBtnEl = document.getElementById('selectModeBtn');
+    if (selectModeBtnEl) selectModeBtnEl.classList.toggle('active', state.selectMode);
 
     // Note: the Filtr/Sdílet dropdown panels are deliberately NOT re-rendered here on every
     // render() call — rebuilding the search <input> on each keystroke would reset its cursor
