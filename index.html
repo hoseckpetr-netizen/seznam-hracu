@@ -66,18 +66,21 @@
     /* Detail view */
     .detail-back { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; cursor: pointer; background: none; border: none; padding: 0; margin-bottom: 18px; font-family: inherit; }
     .detail-back:hover { color: var(--accent); }
-    .detail-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-bottom: 22px; padding: 20px 22px; border-radius: 16px; background: linear-gradient(160deg, var(--card), rgba(0,255,255,0.03)); border: 1px solid var(--border); }
+    .detail-head { display: flex; align-items: flex-start; gap: 22px; flex-wrap: wrap; margin-bottom: 22px; padding: 20px 22px; border-radius: 16px; background: linear-gradient(160deg, var(--card), rgba(0,255,255,0.03)); border: 1px solid var(--border); }
     .detail-head .ring { width: 60px; height: 60px; }
     .detail-head .ring .ring-hole { font-size: 15px; }
-    .detail-photo { position: relative; width: 120px; height: 152px; flex-shrink: 0; border-radius: 12px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 24px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+    .detail-photo { position: relative; width: 132px; height: 168px; flex-shrink: 0; border-radius: 12px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 24px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
     .detail-info { min-width: 0; flex: 1; }
     .detail-photo img { width: 100%; height: 100%; object-fit: cover; }
-    .detail-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .detail-name { font-size: 22px; font-weight: 700; letter-spacing: -0.2px; }
-    .detail-meta { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
-    .detail-meta .meta-sep { color: var(--border); }
+    /* Each piece of info gets its own line (name, FAČR ID, category, birth date, age) instead of
+       wrapping inline next to each other — a long name used to push the FAČR ID badge onto an
+       uneven wrapped line; stacking them is immune to name length by construction. */
+    .detail-name-row { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+    .detail-name { font-size: 19px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.25; }
+    .detail-meta { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 8px; }
+    .detail-meta-row { display: flex; align-items: center; gap: 6px; }
     .cat-pill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; letter-spacing: 0.2px; white-space: nowrap; }
-    .detail-progress-wrap { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .detail-progress-wrap { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
     .detail-progress-bar { width: 160px; max-width: 40vw; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; flex-shrink: 0; }
     .detail-progress-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .7s cubic-bezier(.22,.9,.34,1); }
     .detail-progress-label { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
@@ -230,7 +233,7 @@
       .detail-grid { flex-direction: column; }
       .info-box { min-width: 0; width: 100%; }
       .detail-head { flex-wrap: nowrap; align-items: flex-start; gap: 12px; padding: 14px 14px; }
-      .detail-photo { width: 84px; height: 108px; font-size: 18px; }
+      .detail-photo { width: 92px; height: 118px; font-size: 18px; }
       .detail-name { font-size: 16px; }
       .detail-progress-bar { width: 110px; }
       .settings-sub { margin: -6px 0 14px; font-size: 12px; }
@@ -3146,13 +3149,15 @@
         '<div class="detail-info">' +
           '<div class="detail-name-row">' +
             '<div class="detail-name">' + esc(p.jmenoCele) + '</div>' +
-            (p.id ? '<span class="detail-id">FAČR ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) : '') +
+            (p.id ? '<div class="detail-meta-row"><span class="detail-id">FAČR ID ' + esc(p.id) + '</span>' + copyBtnHtml(p.id) + '</div>' : '') +
           '</div>' +
           '<div class="detail-meta">' +
-            '<span class="cat-pill" style="background:' + esc(p.categoryColor) + ';color:' + esc(contrastTextColor_(p.categoryColor)) + '">' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' +
-            (p.kategorie ? '<span>' + esc(p.kategorie) + '</span>' : '') +
-            '<span class="meta-sep">·</span><span>narozen ' + esc(p.datumNarozeni) + '</span>' +
-            (p.vek ? '<span class="meta-sep">·</span><span>' + esc(p.vek) + ' let</span>' : '') +
+            '<div class="detail-meta-row">' +
+              '<span class="cat-pill" style="background:' + esc(p.categoryColor) + ';color:' + esc(contrastTextColor_(p.categoryColor)) + '">' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' +
+              (p.kategorie ? '<span>' + esc(p.kategorie) + '</span>' : '') +
+            '</div>' +
+            '<div class="detail-meta-row">narozen ' + esc(p.datumNarozeni) + '</div>' +
+            (p.vek ? '<div class="detail-meta-row">' + esc(p.vek) + ' let</div>' : '') +
           '</div>' +
           '<div class="detail-progress-wrap">' +
             '<div class="detail-progress-bar"><div class="detail-progress-fill" id="detailProgressFill" data-pct="' + pct + '" style="width:0%;background:' + esc(p.categoryColor) + '"></div></div>' +
