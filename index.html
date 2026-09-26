@@ -3080,8 +3080,17 @@
       '</div>';
   }
 
+  // Tracks what was last rendered into #main so a genuine navigation (list → detail, list →
+  // settings, one player's card → another's, …) can snap the scroll position back to the top —
+  // otherwise #main (which scrolls, not the page) keeps whatever scrollTop the previous view
+  // was left at, so opening a player near the bottom of a long, scrolled-down list opened their
+  // card already scrolled down too, instead of at the top.
+  var lastRenderKey = null;
   function render() {
     var main = document.getElementById('main');
+    var renderKey = state.view + (state.view === 'detail' ? (':' + state.selectedRow) : '');
+    var isNavigation = renderKey !== lastRenderKey;
+    lastRenderKey = renderKey;
     if (state.view === 'detail') {
       main.innerHTML = renderDetailView();
       // The fill is rendered at width:0 on purpose — flipping it to its real value one frame
@@ -3097,6 +3106,11 @@
     else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
     else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
     else { main.innerHTML = renderListView(); }
+    // Must run AFTER the innerHTML swap above, not before: #main keeps its old scrollTop across
+    // an innerHTML replacement (the browser only clamps it to the new content's height, it
+    // doesn't zero it), which is exactly what made a detail card open already scrolled down
+    // when it was opened from far down a long, scrolled list.
+    if (isNavigation) main.scrollTop = 0;
 
     // Sdílet/Filtr/Zrušit filtr/Aktualizovat and the category chips only make sense against
     // the player list — hide them on the player detail card and on Nastavení (and close any
