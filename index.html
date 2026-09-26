@@ -2873,13 +2873,12 @@
   // row is marked "Hotovo". Keyed by the pending row's sheetRow (in "Čekající"), which stays
   // stable across a "Čeká" → "Přidáno" → "Hotovo" transition.
   var pendingRowNotes_ = {};
-  // Whether each pending-user card is expanded. Explicit true/false once the admin has toggled
-  // it; otherwise defaults to open for "Čeká" (still needs a decision) and collapsed for
-  // "Přidáno" (already handled, just a compact follow-up reminder) — see pendingBoxOpen_.
+  // Whether each pending-user card is expanded. Every card starts collapsed (just name + birth
+  // date) so the queue reads as a short list; explicit true/false once the admin has clicked it
+  // open — see pendingBoxOpen_.
   var pendingExpanded_ = {};
   function pendingBoxOpen_(p) {
-    if (pendingExpanded_.hasOwnProperty(p.sheetRow)) return pendingExpanded_[p.sheetRow];
-    return p.stav !== 'Přidáno';
+    return !!pendingExpanded_[p.sheetRow];
   }
   function togglePendingBox_(sheetRow) {
     var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
