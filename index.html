@@ -120,6 +120,7 @@
     .settings-group, .settings-cols, .settings-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
     .settings-col > .info-box { flex: none; }
     .settings-group-title { display: none; }
+    .detail-col { display: contents; }
     .info-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 280px; }
     .info-box .box-title { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
     .box-title.box-head { display: flex; align-items: center; gap: 7px; }
@@ -440,11 +441,21 @@
       .settings-group-title { display: flex; align-items: center; gap: 12px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
       .settings-group-title::after { content: ""; flex: 1; height: 1px; background: var(--border); }
       .settings-cols, .settings-col { gap: 16px; }
+      /* Player card on PC: centred, width-capped page like Nastavení; compact action buttons
+         on the right instead of four full-width bars. */
+      .detail-page { max-width: 1240px; margin: 0 auto; }
+      .detail-page .detail-actions { justify-content: flex-end; }
+      .detail-page .detail-actions .toolbar-btn { flex: 0 0 auto; padding: 7px 16px; }
       /* Card actions: compact buttons in a row instead of stretched across the card. */
       .pending-box-body .modal-actions { flex-wrap: wrap; }
       .pending-box-body .modal-actions button { flex: 0 0 auto; padding: 7px 14px; font-size: 12px; white-space: nowrap; }
     }
     @media (min-width: 1100px) {
+      /* Player card: contact boxes (2×2) on the left, checklist on the right. */
+      .detail-body { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+      .detail-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+      .detail-col-info { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      .detail-col > .info-box { min-width: 0 !important; }
       .settings-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
     }
     /* Narrower PC windows: drop the "Seznam hráčů / season" caption (the home icon stays)
@@ -549,7 +560,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – kontakt hráče ≠ zástupce';
+  var APP_VERSION = '29. 9. 2026 – kompaktní karta hráče';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -4528,7 +4539,8 @@
       return '<div class="info-row"><span>' + esc(label) + '</span><span class="info-value">' + link + (value ? copyBtnHtml(value) : '') + '</span></div>';
     }
 
-    return '<div class="detail-actions" style="margin-bottom:18px;">' +
+    return '<div class="detail-page">' +
+      '<div class="detail-actions" style="margin-bottom:18px;">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
           '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Do vyřazených</button>' : '') +
@@ -4555,7 +4567,10 @@
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="detail-grid">' +
+      // .detail-col wrappers are display:contents on phone/tablet (layout exactly as before);
+      // on a wide PC screen they become two columns: contact boxes | checklist.
+      '<div class="detail-grid detail-body">' +
+        '<div class="detail-col detail-col-info">' +
         '<div class="info-box">' +
           '<span class="box-title">Kontaktní údaje hráče</span>' +
           '<div class="info-row"><span>Rodné číslo</span><span class="info-value">' + (esc(formatRodneCislo_(p.rodneCislo)) || '—') + (p.rodneCislo ? copyBtnHtml(formatRodneCislo_(p.rodneCislo)) : '') + '</span></div>' +
@@ -4580,11 +4595,15 @@
           (mapsHref ? '<a href="' + esc(mapsHref) + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--text);text-decoration:none;">' + esc(addressLine) + '</a>' : '<span style="font-size:13px;">—</span>') +
           '<span style="font-size:11px;color:#5a6169;">Obec: ' + (esc(p.mesto) || '—') + '</span>' +
         '</div>' +
-        '<div class="info-box" style="min-width:100%;">' +
+        '</div>' +
+        '<div class="detail-col detail-col-checklist">' +
+        '<div class="info-box detail-checklist-box" style="min-width:100%;">' +
           '<span class="box-title">Registrační checklist (' + c.done + '/' + c.total + ')</span>' +
           '<div class="checklist-wrap">' + checklistRows + '</div>' +
         '</div>' +
-      '</div>';
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
 
   // Tracks what was last rendered into #main so a genuine navigation (list → detail, list →
