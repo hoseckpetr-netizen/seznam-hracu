@@ -3248,6 +3248,17 @@
     if (badge) badge.style.display = pendingBadgeCount_() > 0 ? 'block' : 'none';
   }
 
+  // The roster player a "Noví uživatelé" row corresponds to (once it's been added to
+  // "Seznam") — same rule as the import duplicate check: rodné číslo, else name + birth date.
+  function pendingRosterMatch_(p) {
+    if (!DATA || !DATA.players) return null;
+    var rc = normalizeDigits_(p.rodneCislo);
+    var key = nameKey_(p.jmeno, p.prijmeni);
+    return DATA.players.find(function(x) {
+      if (rc && x.rodneCislo && normalizeDigits_(x.rodneCislo) === rc) return true;
+      return nameKey_(x.jmeno, x.prijmeni) === key && String(x.datumNarozeni || '') === String(p.datumNarozeni || '');
+    }) || null;
+  }
   function renderPendingUsersBox_() {
     // "Čeká" (needs a decision) is shown before "Přidáno" (already in the sheet, just waiting
     // on the welcome e-mail / Google contacts to be finished off) — nothing here disappears
@@ -3268,6 +3279,8 @@
         ('<button class="icon-btn toolbar-btn" onclick="confirmAddPendingUser(' + p.sheetRow + ')">Přidat do tabulky</button>' +
          '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ')">Odeslat uvítací e-mail</button>' +
          '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>');
+      var rosterPlayer = pendingRosterMatch_(p);
+      if (rosterPlayer) actionsHtml += '<button class="icon-btn toolbar-btn" onclick="openDetail(' + rosterPlayer.sheetRow + ')">Karta hráče</button>';
       var open = pendingBoxOpen_(p);
       var chevron = '<svg class="pending-box-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       return '<div class="pending-box' + (open ? '' : ' collapsed') + '" data-pending-row="' + p.sheetRow + '">' +
