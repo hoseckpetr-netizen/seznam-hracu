@@ -150,6 +150,18 @@
     /* Keep the action buttons on one row even on a narrow phone — divide the row evenly instead
        of letting a button wrap onto a second line, wrapping its own label text if needed. */
     .pending-box-body .modal-actions { flex-wrap: nowrap; gap: 6px; }
+    .pending-box-body .pcl-wrap { margin-top: 8px; padding: 8px 0 0; border-top: 1px solid var(--border); }
+    .pending-box-body .pcl-wrap div { padding: 0; }
+    .pcl-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px !important; }
+    .pcl-title b { color: var(--accent); }
+    .pcl-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pcl-chip { display: inline-flex; align-items: center; gap: 5px; font-family: inherit; font-size: 11px; line-height: 1; padding: 5px 9px 5px 6px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; transition: border-color .12s ease, color .12s ease; }
+    .pcl-chip:hover { border-color: var(--accent); color: var(--text); }
+    .pcl-chip .pcl-mark { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid #3a4048; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; box-sizing: border-box; }
+    .pcl-chip.on { color: var(--text); border-color: rgba(0,255,255,0.35); background: rgba(0,255,255,0.07); }
+    .pcl-chip.on .pcl-mark { border-color: var(--accent); background: rgba(0,255,255,0.18); color: var(--accent); }
+    .pcl-chip.pending { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,255,255,0.2); }
+    .pcl-chip.saving { animation: ckPulse 0.9s ease-in-out infinite; }
     .pending-box-body .modal-actions button { flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: 11px; white-space: normal; line-height: 1.25; }
     .cat-editor-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 0 20px; }
     .cat-editor { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -560,7 +572,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – kompaktní karta hráče';
+  var APP_VERSION = '29. 9. 2026 – checklist u nových uživatelů';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2491,7 +2503,7 @@
       render();
       if (key === 'FOTO PC' && newVal === true) importPlayerPhoto(p);
     }).catch(function(err) {
-      document.querySelectorAll('.player-table td.pt-ck.saving').forEach(function(td) { td.classList.remove('saving'); });
+      document.querySelectorAll('.player-table td.pt-ck.saving, .pcl-chip.saving').forEach(function(td) { td.classList.remove('saving'); });
       pushNotification('Uložení položky "' + (CHECKLIST_LABELS[key] || key) + '" u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
     });
   }
@@ -2504,7 +2516,7 @@
   var ckPopoverEl_ = null;
   function closeCkPopover_() {
     if (ckPopoverEl_) { ckPopoverEl_.remove(); ckPopoverEl_ = null; }
-    document.querySelectorAll('.player-table td.pt-ck.pending').forEach(function(td) { td.classList.remove('pending'); });
+    document.querySelectorAll('.player-table td.pt-ck.pending, .pcl-chip.pending').forEach(function(td) { td.classList.remove('pending'); });
   }
   function openCkPopover_(ev, sheetRow, key) {
     if (!DATA || DATA.role !== 'admin') return;
@@ -3406,6 +3418,23 @@
       return nameKey_(x.jmeno, x.prijmeni) === key && String(x.datumNarozeni || '') === String(p.datumNarozeni || '');
     }) || null;
   }
+  // Compact, clickable checklist for a new player who's already in "Seznam" — small chips
+  // that wrap inside the card, so the queue can be worked through without opening the card.
+  // A click opens the same small confirmation bubble at the cursor as the desktop table.
+  function pendingChecklistHtml_(pl) {
+    var keys = activeChecklistKeys(pl);
+    var done = keys.filter(function(k) { return pl.checklist[k]; }).length;
+    var chips = keys.map(function(key) {
+      var on = !!pl.checklist[key];
+      return '<button type="button" class="pcl-chip' + (on ? ' on' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + ' — klikněte pro změnu" ' +
+        'onclick="event.stopPropagation(); openCkPopover_(event, ' + pl.sheetRow + ', \'' + jsStr(key) + '\')">' +
+        '<span class="pcl-mark">' + (on ? '&#10003;' : '') + '</span>' + esc(CHECKLIST_LABELS[key] || key) + '</button>';
+    }).join('');
+    return '<div class="pcl-wrap">' +
+      '<div class="pcl-title">Checklist <b>' + done + '/' + keys.length + '</b></div>' +
+      '<div class="pcl-chips">' + chips + '</div>' +
+    '</div>';
+  }
   function renderPendingUsersBox_() {
     // "Čeká" (needs a decision) is shown before "Přidáno" (already in the sheet, just waiting
     // on the welcome e-mail / Google contacts to be finished off) — nothing here disappears
@@ -3447,6 +3476,7 @@
           (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
           (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
           (note ? '<div style="margin-top:4px;">' + esc(note) + '</div>' : '') +
+          (rosterPlayer ? pendingChecklistHtml_(rosterPlayer) : '') +
           '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Přidáno do fronty ' + esc(p.datumImportu) + (p.zdrojovySoubor ? ' ze souboru "' + esc(p.zdrojovySoubor) + '"' : '') + '</div>' +
           '<div class="modal-actions" style="margin-top:8px;justify-content:flex-start;">' +
             actionsHtml +
