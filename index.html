@@ -549,7 +549,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – fotky bez ohledu na diakritiku';
+  var APP_VERSION = '29. 9. 2026 – kontakt hráče ≠ zástupce';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -661,6 +661,43 @@
       pushNotification('Opraveno datum narození v tabulce (věk se zobrazoval s chybou): ' + bad.map(function(p) { return p.jmenoCele; }).join(', ') + '.', 'info');
     }).catch(function(err) {
       pushNotification('Oprava data narození se nezdařila: ' + err.message, 'error');
+    });
+  }
+  // One-off self-repair for players that an older app version added from the KIS import with
+  // the PARENT's phone/e-mail copied into the player's own columns. Only rows that came in
+  // through the app's import ("Čekající" row marked Přidáno/Hotovo) are touched, and only a
+  // player phone/e-mail that is identical to the guardian's gets cleared — the guardian's
+  // columns keep it. Admin only; does nothing once fixed.
+  function repairImportedPlayerContacts_() {
+    if (!DATA || DATA.role !== 'admin' || !DATA.colIndex || !DATA.pending) return;
+    var idx = DATA.colIndex;
+    var imported = {};
+    DATA.pending.forEach(function(pr) {
+      if (pr.stav !== 'Přidáno' && pr.stav !== 'Hotovo') return;
+      var m = pendingRosterMatch_(pr);
+      if (m) imported[m.sheetRow] = true;
+    });
+    var data = [], names = [];
+    DATA.players.forEach(function(p) {
+      if (!imported[p.sheetRow]) return;
+      var own = playerOwnContact_(p);
+      var fixed = false;
+      if (p.telefonHrac && !own.telefon && idx.telefonHrac >= 0) { data.push({ range: 'Seznam!' + colIndexToLetter(idx.telefonHrac) + p.sheetRow, values: [['']] }); fixed = true; }
+      if (p.emailHrac && !own.email && idx.emailHrac >= 0) { data.push({ range: 'Seznam!' + colIndexToLetter(idx.emailHrac) + p.sheetRow, values: [['']] }); fixed = true; }
+      if (fixed) names.push(p);
+    });
+    if (!data.length) return;
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'RAW', data: data })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      names.forEach(function(p) { var own = playerOwnContact_(p); p.telefonHrac = own.telefon; p.emailHrac = own.email; });
+      render();
+      pushNotification('Opraveno: telefon/e-mail zástupce byl uložen i jako kontakt hráče — u hráče vymazáno (' + names.map(function(p) { return p.jmenoCele; }).join(', ') + ').', 'info');
+    }).catch(function(err) {
+      pushNotification('Oprava kontaktů hráčů se nezdařila: ' + err.message, 'error');
     });
   }
   function ageFromCzDate_(s) {
@@ -1777,6 +1814,7 @@
           });
           loadWaRequests_();
           repairBirthDates_();
+          repairImportedPlayerContacts_();
           applyCachedPhotosToRoster();
           renderCatList();
           render();
@@ -3216,7 +3254,7 @@
         var wb = XLSX.read(ev.target.result, { type: 'array', cellDates: true });
         var sheet = wb.Sheets[wb.SheetNames[0]];
         var rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        var candidates = rows.map(parseKisRow).filter(function(c) { return c.jmeno || c.prijmeni; });
+        var candidates = rows.map(parseKisRowClean_).filter(function(c) { return c.jmeno || c.prijmeni; });
         var fresh = [], skipped = [];
         candidates.forEach(function(c) {
           var m = findExistingMatch_(c);
@@ -3268,6 +3306,17 @@
     reader.readAsArrayBuffer(file);
   }
 
+  // KIS fills the player's own "Telefon"/"E-mail" with the parent's contact for children.
+  // Those are the guardian's details, not the player's — a player phone/e-mail identical to
+  // the guardian's is treated as "player has none of their own".
+  function playerOwnContact_(p) {
+    var ph = normalizePhoneSheet_(p.telefonHrac), gph = normalizePhoneSheet_(p.zastupceTelefon);
+    var em = String(p.emailHrac || '').trim(), gem = String(p.zastupceEmail || '').trim();
+    return {
+      telefon: (ph && ph !== gph) ? ph : '',
+      email: (em && em.toLowerCase() !== gem.toLowerCase()) ? em : ''
+    };
+  }
   function parseKisRow(row) {
     var jmeno = (row['Jméno'] || '').toString().trim();
     var prijmeni = (row['Příjmení'] || '').toString().trim();
@@ -3294,6 +3343,13 @@
       poznamka: (row['Poznámka'] || '').toString().trim(),
       zdravotniOmezeni: (row['Zdravotní omezení'] || '').toString().trim()
     };
+  }
+  function parseKisRowClean_(row) {
+    var r = parseKisRow(row);
+    var own = playerOwnContact_(r);
+    r.telefonHrac = own.telefon;
+    r.emailHrac = own.email;
+    return r;
   }
 
   // Session-only notes per pending row (e.g. "Google kontakty: hráč, zástupce selhal: ...") —
@@ -3375,7 +3431,7 @@
           (isAdded ? '<div style="color:var(--green);font-size:11px;font-weight:700;margin-bottom:5px;">&#10003; PŘIDÁNO DO TABULKY — zbývá odeslat uvítací e-mail</div>' : '') +
           (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
           '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
-          '<div>Hráč: ' + esc(formatPhoneForContact_(p.telefonHrac) || p.telefonHrac || '—') + ' · ' + esc(p.emailHrac || '—') + '</div>' +
+          (function() { var own = playerOwnContact_(p); return '<div>Hráč: ' + esc(formatPhoneForContact_(own.telefon) || '—') + ' · ' + esc(own.email || '—') + (own.telefon || own.email ? '' : ' <span style="color:var(--muted);">(vlastní kontakt nemá — v KIS je uveden kontakt zástupce)</span>') + '</div>'; })() +
           '<div>Zástupce: ' + esc(p.zastupceJmeno || '—') + ' · ' + esc(formatPhoneForContact_(p.zastupceTelefon) || p.zastupceTelefon || '—') + ' · ' + esc(p.zastupceEmail || '—') + '</div>' +
           (p.poznamka ? '<div>Poznámka: ' + esc(p.poznamka) + '</div>' : '') +
           (p.zdravotniOmezeni ? '<div>Zdravotní omezení: ' + esc(p.zdravotniOmezeni) + '</div>' : '') +
@@ -3429,10 +3485,13 @@
     put('cp', p.cp);
     put('mesto', p.mesto);
     put('psc', p.psc);
-    put('emailHrac', p.emailHrac);
-    // Force text — same reason as datumNarozeni/rodneCislo above: a bare digit string would
-    // otherwise become a number in the sheet, which later breaks Google Contacts creation.
-    put('telefonHrac', p.telefonHrac, true);
+    // Only the player's OWN phone/e-mail — KIS repeats the parent's contact in the player
+    // fields, and that belongs only in the Zástupce columns (see playerOwnContact_).
+    var own = playerOwnContact_(p);
+    put('emailHrac', own.email);
+    // Force text — same reason as rodneCislo above: a bare digit string would otherwise
+    // become a number in the sheet, which later breaks Google Contacts creation.
+    put('telefonHrac', own.telefon, true);
     put('zastupceJmeno', p.zastupceJmeno);
     put('zastupceTelefon', p.zastupceTelefon, true);
     put('zastupceEmail', p.zastupceEmail);
