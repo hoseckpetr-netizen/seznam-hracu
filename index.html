@@ -360,6 +360,21 @@
     .player-table th.pt-ck-count-th, .player-table td.pt-ck-count { text-align: right; padding-left: 10px; }
     .player-table td.pt-ck-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
     .player-table td.pt-ck-count.all { color: var(--accent); }
+    .player-table td.pt-ck.editable { cursor: pointer; }
+    .player-table td.pt-ck.editable:hover .ck { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,255,255,0.12); }
+    .player-table td.pt-ck.pending .ck { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,255,255,0.25); }
+    .player-table td.pt-ck.saving .ck { animation: ckPulse 0.9s ease-in-out infinite; }
+    @keyframes ckPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    .ck-popover { position: fixed; z-index: 80; min-width: 190px; max-width: 260px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.5); font-size: 12px; animation: ckPopIn .12s ease-out; }
+    @keyframes ckPopIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+    .ck-popover .ck-pop-title { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+    .ck-popover .ck-pop-text { color: var(--muted); margin-bottom: 10px; }
+    .ck-popover .ck-pop-text b.yes { color: var(--accent); }
+    .ck-popover .ck-pop-text b.no { color: var(--red); }
+    .ck-popover .ck-pop-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .ck-popover .ck-pop-btn { font-family: inherit; font-size: 11.5px; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+    .ck-popover .ck-pop-btn:hover { border-color: var(--accent); }
+    .ck-popover .ck-pop-btn.primary { background: var(--accent); border-color: var(--accent); color: #06181a; font-weight: 600; }
     /* Keep the name visible while scrolling sideways through the step columns. */
     .player-table td.pt-name { position: sticky; left: 0; background: var(--card); z-index: 1; }
     .player-table tbody tr:hover td.pt-name { background: #1b2226; }
@@ -2280,9 +2295,65 @@
       render();
       if (key === 'FOTO PC' && newVal === true) importPlayerPhoto(p);
     }).catch(function(err) {
+      document.querySelectorAll('.player-table td.pt-ck.saving').forEach(function(td) { td.classList.remove('saving'); });
       pushNotification('Uložení položky "' + (CHECKLIST_LABELS[key] || key) + '" u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
     });
   }
+
+  // ---------- Checklist editing straight from the desktop table ----------
+  // Clicking a step cell opens a small confirmation bubble right at the cursor (instead of
+  // the full-screen modal used on the detail card) — confirming reuses applyChecklistToggle_,
+  // so the sheet write, the "<KEY> DATUM" stamp and the FOTO PC photo import all behave
+  // exactly as on the detail card.
+  var ckPopoverEl_ = null;
+  function closeCkPopover_() {
+    if (ckPopoverEl_) { ckPopoverEl_.remove(); ckPopoverEl_ = null; }
+    document.querySelectorAll('.player-table td.pt-ck.pending').forEach(function(td) { td.classList.remove('pending'); });
+  }
+  function openCkPopover_(ev, sheetRow, key) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    closeCkPopover_();
+    var cell = ev.currentTarget;
+    if (cell) cell.classList.add('pending');
+    var newVal = !p.checklist[key];
+    var label = CHECKLIST_LABELS[key] || key;
+    var box = document.createElement('div');
+    box.className = 'ck-popover';
+    box.innerHTML =
+      '<div class="ck-pop-title">' + esc(p.jmenoCele) + '</div>' +
+      '<div class="ck-pop-text">' + esc(label) + ' → <b class="' + (newVal ? 'yes' : 'no') + '">' + (newVal ? 'splněno' : 'nesplněno') + '</b></div>' +
+      '<div class="ck-pop-actions">' +
+        '<button type="button" class="ck-pop-btn" data-act="cancel">Zrušit</button>' +
+        '<button type="button" class="ck-pop-btn primary" data-act="ok">Potvrdit</button>' +
+      '</div>';
+    box.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+      if (act === 'cancel') closeCkPopover_();
+      else if (act === 'ok') {
+        if (ckPopoverEl_) { ckPopoverEl_.remove(); ckPopoverEl_ = null; }
+        if (cell) { cell.classList.remove('pending'); cell.classList.add('saving'); }
+        applyChecklistToggle_(sheetRow, key, newVal);
+      }
+    });
+    document.body.appendChild(box);
+    ckPopoverEl_ = box;
+    // Place just below-right of the cursor, flipped/clamped so it never leaves the viewport.
+    var w = box.offsetWidth, h = box.offsetHeight, m = 8;
+    var x = ev.clientX + 10, y = ev.clientY + 12;
+    if (x + w > window.innerWidth - m) x = ev.clientX - w - 10;
+    if (y + h > window.innerHeight - m) y = ev.clientY - h - 12;
+    box.style.left = Math.max(m, x) + 'px';
+    box.style.top = Math.max(m, y) + 'px';
+    var okBtn = box.querySelector('[data-act="ok"]');
+    if (okBtn) okBtn.focus();
+  }
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && ckPopoverEl_) closeCkPopover_(); });
+  document.addEventListener('click', function(e) { if (ckPopoverEl_ && !ckPopoverEl_.contains(e.target)) closeCkPopover_(); });
+  window.addEventListener('scroll', function() { if (ckPopoverEl_) closeCkPopover_(); }, true);
+  window.addEventListener('resize', function() { if (ckPopoverEl_) closeCkPopover_(); });
 
   // ---------- Mapa hráčů (Google Maps JavaScript API + Geocoding API, addresses geocoded client-side) ----------
   function loadGeocodeCache() {
@@ -3671,6 +3742,7 @@
     var showChecklist = opts.showChecklist !== false;
     var clickAction = opts.clickAction || function(p) { return 'openDetail(' + p.sheetRow + ')'; };
     var disabledCk = loadDisabledChecklistKeys_();
+    var ckEditable = !!(DATA && DATA.role === 'admin') && showChecklist;
     var ckKeys = CHECKLIST_KEYS.filter(function(k) { return disabledCk.indexOf(k) === -1; });
     var rows = players.map(function(p) {
       var c = checklistCounts(p);
@@ -3682,7 +3754,8 @@
       var statusCell = showChecklist ?
         (ckKeys.map(function(key, i) {
           var on = !!p.checklist[key];
-          return '<td class="pt-ck' + (i === 0 ? ' pt-ck-first' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + ': ' + (on ? 'hotovo' : 'chybí') + '">' +
+          return '<td class="pt-ck' + (i === 0 ? ' pt-ck-first' : '') + (ckEditable ? ' editable' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + ': ' + (on ? 'hotovo' : 'chybí') + '"' +
+            (ckEditable ? ' onclick="event.stopPropagation(); openCkPopover_(event, ' + p.sheetRow + ', \'' + jsStr(key) + '\')"' : '') + '>' +
             '<span class="ck' + (on ? ' on' : '') + '">' + (on ? CK_TICK_SVG_ : '') + '</span></td>';
         }).join('') +
         '<td class="pt-ck-count' + (c.total > 0 && c.done === c.total ? ' all' : '') + '">' + c.done + '/' + c.total + '</td>') :
@@ -3860,6 +3933,12 @@
     var renderKey = state.view + (state.view === 'detail' ? (':' + state.selectedRow) : '');
     var isNavigation = renderKey !== lastRenderKey;
     lastRenderKey = renderKey;
+    // A same-view re-render (e.g. after ticking a checklist step straight in the desktop
+    // table) must not snap the table back to its left edge — the step columns sit at the far
+    // right, so remember the wide table's horizontal scroll and put it back after the swap.
+    var prevTableWrap = main.querySelector('.player-table-wrap');
+    var prevTableScrollX = (!isNavigation && prevTableWrap) ? prevTableWrap.scrollLeft : 0;
+    closeCkPopover_();
     if (state.view === 'detail') {
       main.innerHTML = renderDetailView();
       // The fill is rendered at width:0 on purpose — flipping it to its real value one frame
@@ -3886,6 +3965,9 @@
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
       window.scrollTo(0, 0);
+    } else if (prevTableScrollX) {
+      var newTableWrap = main.querySelector('.player-table-wrap');
+      if (newTableWrap) newTableWrap.scrollLeft = prevTableScrollX;
     }
 
     // Sdílet/Filtr/Zrušit filtr/Aktualizovat and the category chips only make sense against
