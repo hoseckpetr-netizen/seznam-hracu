@@ -431,6 +431,7 @@
          stay pinned at the top while scrolling down — like a spreadsheet. */
       .player-table-wrap { display: block; overflow: auto; max-height: calc(100vh - 150px); min-height: 320px; }
       .player-table th { z-index: 2; }
+      .player-table th.pt-name-th { position: sticky; left: 0; z-index: 3; }
 
       /* Nastavení on PC: a centred, width-capped page with two titled groups. */
       .settings-page { max-width: 1320px; margin: 0 auto; }
@@ -4135,7 +4136,7 @@
       '<th>Vyřazen</th>';
     return '<div class="player-table-wrap"><table class="player-table"><thead><tr>' +
       checkboxTh +
-      '<th></th><th>Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Telefon hráče</th><th>E-mail hráče</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
+      '<th></th><th class="pt-name-th">Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Telefon hráče</th><th>E-mail hráče</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
       statusTh +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
