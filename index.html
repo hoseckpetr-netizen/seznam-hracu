@@ -3646,7 +3646,7 @@
       var cache = loadContactGroupCache_();
       delete cache[groupName];
       saveContactGroupCache_(cache);
-      return ensureContactGroup_(groupName).then(function(freshGid) {
+      return new Promise(function(res) { setTimeout(res, 1500); }).then(function() { return ensureContactGroup_(groupName); }).then(function(freshGid) {
         return postPeopleCreate_(withGroup(freshGid)).catch(function(err2) {
           if (err2.status !== 400) throw err2;
           return postPeopleCreate_(withGroup(null)).then(function(person) {
@@ -3662,27 +3662,49 @@
   // guardian (only if any guardian field was actually filled in) — each into its own group.
   // Failures here are reported but don't roll back the sheet write, since the player is
   // already correctly in "Seznam" at that point either way.
+  // Is there already a contact with exactly this name? (Used so "Vytvořit Google kontakty
+  // znovu" only creates what's missing and never duplicates the half that already worked.)
+  function contactNameExists_(fullName) {
+    var want = stripDiacritics_(String(fullName || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!want) return Promise.resolve(false);
+    return searchContacts_(String(fullName).trim()).then(function(people) {
+      return people.some(function(person) {
+        return (person.names || []).some(function(n) {
+          var dn = n.displayName || ((n.givenName || '') + ' ' + (n.familyName || ''));
+          return stripDiacritics_(dn).toLowerCase().replace(/\s+/g, ' ').trim() === want;
+        });
+      });
+    }).catch(function() { return false; });
+  }
+  // Creates a contact for the player (if a name is present) and, separately, for the
+  // guardian (only if any guardian field was actually filled in) — each into its own group.
+  // Strictly ONE AFTER THE OTHER: Google's People API rejects concurrent contact writes for
+  // the same account ("Request contains an invalid argument."), which is exactly why one of
+  // the two used to fail at random when they were sent in parallel. A contact whose name
+  // already exists is skipped, so retrying never duplicates the one that already worked.
+  // Failures here are reported but don't roll back the sheet write.
   function createContactsForPendingUser_(p) {
-    var jobs = [];
+    var steps = [];
     var results = [];
     if (p.jmenoCele) {
-      jobs.push(
-        ensureContactGroup_(CONTACT_GROUP_NAMES.hraci)
-          .then(function(gid) { return createContact_(p.jmenoCele, p.emailHrac, formatPhoneForContact_(p.telefonHrac), gid, '', CONTACT_GROUP_NAMES.hraci); })
-          .then(function() { results.push('hráč'); })
-          .catch(function(err) { results.push('hráč selhal: ' + err.message); })
-      );
+      steps.push({ label: 'hráč', name: p.jmenoCele, group: CONTACT_GROUP_NAMES.hraci,
+        email: p.emailHrac, phone: formatPhoneForContact_(p.telefonHrac), org: '' });
     }
     if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
-      jobs.push(
-        ensureContactGroup_(CONTACT_GROUP_NAMES.rodice)
-          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid, p.jmenoCele, CONTACT_GROUP_NAMES.rodice); })
-          .then(function() { results.push('zástupce'); })
-          .catch(function(err) { results.push('zástupce selhal: ' + err.message); })
-      );
+      steps.push({ label: 'zástupce', name: p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), group: CONTACT_GROUP_NAMES.rodice,
+        email: p.zastupceEmail, phone: formatPhoneForContact_(p.zastupceTelefon), org: p.jmenoCele });
     }
-    if (!jobs.length) return Promise.resolve(null);
-    return Promise.all(jobs).then(function() {
+    if (!steps.length) return Promise.resolve(null);
+    return steps.reduce(function(chain, st) {
+      return chain.then(function() {
+        return contactNameExists_(st.name).then(function(exists) {
+          if (exists) { results.push(st.label + ' už existoval'); return; }
+          return ensureContactGroup_(st.group)
+            .then(function(gid) { return createContact_(st.name, st.email, st.phone, gid, st.org, st.group); })
+            .then(function() { results.push(st.label); });
+        }).catch(function(err) { results.push(st.label + ' selhal: ' + err.message); });
+      });
+    }, Promise.resolve()).then(function() {
       return 'Google kontakty: ' + results.join(', ') + '.';
     });
   }
