@@ -549,7 +549,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – kontakty postupně';
+  var APP_VERSION = '29. 9. 2026 – kontakt zástupce + společnost';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -3373,9 +3373,9 @@
     var hasGuardian = !!(p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon);
     document.getElementById('modalBox').innerHTML =
       '<h2>Potvrzení</h2>' +
-      '<div style="font-size:13px;margin-bottom:18px;">Přidat <b>' + esc(p.jmenoCele) + '</b> do tabulky "Seznam" a vytvořit Google kontakt (skupina "FK Slovany - Hráči")' +
-      (hasGuardian ? ', a kontakt pro zástupce <b>' + esc(p.zastupceJmeno || '') + '</b> (skupina "FK Slovany - Rodiče")' : '') +
-      '?</div>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Přidat <b>' + esc(p.jmenoCele) + '</b> do tabulky "Seznam"' +
+      (hasGuardian ? ' a uložit Google kontakt zástupce <b>' + esc(p.zastupceJmeno || '') + '</b> (štítek "FK Slovany - Rodiče", společnost „' + esc(p.jmenoCele) + '“)' : '') +
+      '?<br><span style="color:var(--muted);font-size:12px;">Samostatný kontakt hráče (štítek "FK Slovany - Hráči") vznikne jen tehdy, když má hráč vlastní telefon nebo e-mail.</span></div>' +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
         '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyAddPendingUser_(' + sheetRow + ')">Potvrdit</button>' +
@@ -3665,50 +3665,131 @@
   // guardian (only if any guardian field was actually filled in) — each into its own group.
   // Failures here are reported but don't roll back the sheet write, since the player is
   // already correctly in "Seznam" at that point either way.
-  // Is there already a contact with exactly this name? (Used so "Vytvořit Google kontakty
-  // znovu" only creates what's missing and never duplicates the half that already worked.)
-  function contactNameExists_(fullName) {
-    var want = stripDiacritics_(String(fullName || '')).toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!want) return Promise.resolve(false);
-    return searchContacts_(String(fullName).trim()).then(function(people) {
-      return people.some(function(person) {
-        return (person.names || []).some(function(n) {
-          var dn = n.displayName || ((n.givenName || '') + ' ' + (n.familyName || ''));
-          return stripDiacritics_(dn).toLowerCase().replace(/\s+/g, ' ').trim() === want;
+  function contactNorm_(s) { return stripDiacritics_(String(s || '')).toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function personNames_(person) {
+    return (person.names || []).map(function(n) { return contactNorm_(n.displayName || ((n.givenName || '') + ' ' + (n.familyName || ''))); });
+  }
+  var CONTACT_FULL_MASK_ = 'names,phoneNumbers,emailAddresses,organizations,memberships';
+  // All contacts that match by name, phone or e-mail (deduplicated by resourceName).
+  function searchContactsAny_(queries) {
+    var seen = {}, all = [];
+    return queries.filter(Boolean).reduce(function(chain, q) {
+      return chain.then(function() {
+        return searchContacts_(q, CONTACT_FULL_MASK_).then(function(people) {
+          people.forEach(function(pp) { if (pp.resourceName && !seen[pp.resourceName]) { seen[pp.resourceName] = true; all.push(pp); } });
         });
       });
-    }).catch(function() { return false; });
+    }, Promise.resolve()).then(function() { return all; });
   }
-  // Creates a contact for the player (if a name is present) and, separately, for the
-  // guardian (only if any guardian field was actually filled in) — each into its own group.
-  // Strictly ONE AFTER THE OTHER: Google's People API rejects concurrent contact writes for
-  // the same account ("Request contains an invalid argument."), which is exactly why one of
-  // the two used to fail at random when they were sent in parallel. A contact whose name
-  // already exists is skipped, so retrying never duplicates the one that already worked.
-  // Failures here are reported but don't roll back the sheet write.
-  function createContactsForPendingUser_(p) {
-    var steps = [];
-    var results = [];
-    if (p.jmenoCele) {
-      steps.push({ label: 'hráč', name: p.jmenoCele, group: CONTACT_GROUP_NAMES.hraci,
-        email: p.emailHrac, phone: formatPhoneForContact_(p.telefonHrac), org: '' });
-    }
-    if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
-      steps.push({ label: 'zástupce', name: p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), group: CONTACT_GROUP_NAMES.rodice,
-        email: p.zastupceEmail, phone: formatPhoneForContact_(p.zastupceTelefon), org: p.jmenoCele });
-    }
-    if (!steps.length) return Promise.resolve(null);
-    return steps.reduce(function(chain, st) {
-      return chain.then(function() {
-        return contactNameExists_(st.name).then(function(exists) {
-          if (exists) { results.push(st.label + ' už existoval'); return; }
-          return ensureContactGroup_(st.group)
-            .then(function(gid) { return createContact_(st.name, st.email, st.phone, gid, st.org, st.group); })
-            .then(function() { results.push(st.label); });
-        }).catch(function(err) { results.push(st.label + ' selhal: ' + err.message); });
+  function personHasPhoneOrMail_(person, phone, email) {
+    var ph = normalizePhoneSheet_(phone).slice(-9), em = String(email || '').trim().toLowerCase();
+    var phoneHit = ph && (person.phoneNumbers || []).some(function(n) { return normalizePhoneSheet_(n.value).slice(-9) === ph; });
+    var mailHit = em && (person.emailAddresses || []).some(function(e) { return (e.value || '').trim().toLowerCase() === em; });
+    return !!(phoneHit || mailHit);
+  }
+  function updateContact_(person, fields, body) {
+    body.etag = person.etag;
+    return fetch('https://people.googleapis.com/v1/' + person.resourceName + ':updateContact?updatePersonFields=' + fields, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) {
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(err) { throw peopleApiError_(err, r.status); });
+      return r.json();
+    });
+  }
+  function modifyGroup_(groupResourceName, addRes, removeRes) {
+    var body = {};
+    if (addRes) body.resourceNamesToAdd = [addRes];
+    if (removeRes) body.resourceNamesToRemove = [removeRes];
+    return fetch('https://people.googleapis.com/v1/' + groupResourceName + '/members:modify', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) {
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(err) { throw peopleApiError_(err, r.status); });
+      return r.json();
+    });
+  }
+  function splitName_(fullName) {
+    fullName = String(fullName || '').replace(/\s+/g, ' ').trim();
+    var i = fullName.indexOf(' ');
+    return { givenName: i === -1 ? fullName : fullName.slice(0, i), familyName: i === -1 ? '' : fullName.slice(i + 1) };
+  }
+  // The guardian is the primary contact: name = guardian, "Společnost" = player, label
+  // "FK Slovany - Rodiče". An existing contact is FIXED rather than duplicated:
+  //  - a contact with the guardian's name → add the player as Společnost + the Rodiče label;
+  //  - a contact that carries the guardian's phone/e-mail but is named after the PLAYER (how
+  //    older versions saved it, because the player row usually has the parent's number) →
+  //    renamed to the guardian, Společnost = player, moved from Hráči to Rodiče.
+  //  Otherwise a new contact is created.
+  function upsertGuardianContact_(p) {
+    var gName = (p.zastupceJmeno || (p.jmenoCele + ' - zástupce')).trim();
+    var phone = formatPhoneForContact_(p.zastupceTelefon);
+    var email = String(p.zastupceEmail || '').trim();
+    var org = String(p.jmenoCele || '').trim();
+    return Promise.all([ensureContactGroup_(CONTACT_GROUP_NAMES.rodice), ensureContactGroup_(CONTACT_GROUP_NAMES.hraci).catch(function() { return null; })]).then(function(gids) {
+      var rodiceGid = gids[0], hraciGid = gids[1];
+      var digits = normalizePhoneSheet_(p.zastupceTelefon);
+      return searchContactsAny_([gName, email, digits ? digits.slice(-9) : '', org]).then(function(people) {
+        var byName = people.find(function(pp) { return personNames_(pp).indexOf(contactNorm_(gName)) !== -1; });
+        var wrong = !byName && people.find(function(pp) {
+          return personNames_(pp).indexOf(contactNorm_(org)) !== -1 && personHasPhoneOrMail_(pp, p.zastupceTelefon, email);
+        });
+        var target = byName || wrong;
+        if (!target) {
+          return createContact_(gName, email, phone, rodiceGid, org, CONTACT_GROUP_NAMES.rodice).then(function() { return 'zástupce vytvořen'; });
+        }
+        var hasOrg = (target.organizations || []).some(function(o) { return contactNorm_(o.name) === contactNorm_(org); });
+        var inRodice = (target.memberships || []).some(function(m) { return m.contactGroupMembership && m.contactGroupMembership.contactGroupResourceName === rodiceGid; });
+        var inHraci = hraciGid && (target.memberships || []).some(function(m) { return m.contactGroupMembership && m.contactGroupMembership.contactGroupResourceName === hraciGid; });
+        var fields = [], body = {};
+        if (wrong) { fields.push('names'); body.names = [splitName_(gName)]; }
+        if (org && !hasOrg) { fields.push('organizations'); body.organizations = [{ name: org }]; }
+        var step = fields.length ? updateContact_(target, fields.join(','), body) : Promise.resolve();
+        return step.then(function() {
+          if (!inRodice) return modifyGroup_(rodiceGid, target.resourceName, null);
+        }).then(function() {
+          if (wrong && inHraci) return modifyGroup_(hraciGid, null, target.resourceName);
+        }).then(function() {
+          if (wrong) return 'zástupce opraven (kontakt „' + org + '“ přejmenován na „' + gName + '“, společnost „' + org + '“, štítek Rodiče)';
+          if (!fields.length && inRodice) return 'zástupce už existoval (v pořádku)';
+          return 'zástupce doplněn (' + [!hasOrg && org ? 'společnost „' + org + '“' : '', !inRodice ? 'štítek Rodiče' : ''].filter(Boolean).join(', ') + ')';
+        });
       });
-    }, Promise.resolve()).then(function() {
-      return 'Google kontakty: ' + results.join(', ') + '.';
+    });
+  }
+  // Guardian first (the primary contact), then — only if the player has a phone or e-mail
+  // of their own, different from the guardian's — a separate player contact in "FK Slovany -
+  // Hráči". A player row that just repeats the parent's number gets no contact of its own
+  // (it would show up in the phone as a second name for the parent's number).
+  // Strictly one after the other: Google's People API rejects concurrent contact writes for
+  // the same account ("Request contains an invalid argument.").
+  function createContactsForPendingUser_(p) {
+    var results = [];
+    var chain = Promise.resolve();
+    if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
+      chain = chain.then(function() {
+        return upsertGuardianContact_(p).then(function(msg) { results.push(msg); }, function(err) { results.push('zástupce selhal: ' + err.message); });
+      });
+    }
+    var ownPhone = normalizePhoneSheet_(p.telefonHrac), gPhone = normalizePhoneSheet_(p.zastupceTelefon);
+    var ownMail = String(p.emailHrac || '').trim().toLowerCase(), gMail = String(p.zastupceEmail || '').trim().toLowerCase();
+    var playerHasOwn = (ownPhone && ownPhone !== gPhone) || (ownMail && ownMail !== gMail);
+    if (p.jmenoCele && playerHasOwn) {
+      chain = chain.then(function() {
+        return searchContactsAny_([p.jmenoCele]).then(function(people) {
+          if (people.some(function(pp) { return personNames_(pp).indexOf(contactNorm_(p.jmenoCele)) !== -1; })) { results.push('hráč už existoval'); return; }
+          return ensureContactGroup_(CONTACT_GROUP_NAMES.hraci)
+            .then(function(gid) { return createContact_(p.jmenoCele, p.emailHrac, formatPhoneForContact_(p.telefonHrac), gid, '', CONTACT_GROUP_NAMES.hraci); })
+            .then(function() { results.push('hráč vytvořen'); });
+        }).catch(function(err) { results.push('hráč selhal: ' + err.message); });
+      });
+    } else if (p.jmenoCele) {
+      results.push('hráč bez vlastního telefonu/e-mailu – samostatný kontakt se nevytváří');
+    }
+    return chain.then(function() {
+      return results.length ? 'Google kontakty: ' + results.join('; ') + '.' : null;
     });
   }
 
@@ -3922,8 +4003,9 @@
   }
   // People API searchContacts needs one empty "warm-up" call before it returns fresh results.
   var waSearchWarmed_ = false;
-  function searchContacts_(query) {
-    var url = function(q) { return 'https://people.googleapis.com/v1/people:searchContacts?query=' + encodeURIComponent(q) + '&readMask=names,phoneNumbers,emailAddresses&pageSize=30'; };
+  function searchContacts_(query, readMask) {
+    readMask = readMask || 'names,phoneNumbers,emailAddresses';
+    var url = function(q) { return 'https://people.googleapis.com/v1/people:searchContacts?query=' + encodeURIComponent(q) + '&readMask=' + readMask + '&pageSize=30'; };
     var auth = { headers: { 'Authorization': 'Bearer ' + accessToken } };
     var warm = waSearchWarmed_ ? Promise.resolve() : fetch(url(''), auth).then(function() { waSearchWarmed_ = true; }).catch(function() {});
     return warm.then(function() { return fetch(url(query), auth); }).then(function(r) {
