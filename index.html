@@ -247,6 +247,16 @@
     /* Selection / sharing toolbar */
     .toolbar-btn { width: auto; padding: 8px 14px; font-size: 12px; white-space: nowrap; font-family: inherit; }
     .toolbar-btn:disabled { opacity: .4; cursor: default; }
+    /* Player detail card's action row (Editovat / Sdílet kartu / Do vyřazených / Smazat
+       trvale). Plain wrapping flex row on desktop, where there's room for all four side by
+       side; on a phone the same wrap wasn't enough — four nowrap-labelled buttons don't fit
+       one per line, so each ended up alone on its own full-width-looking row. A fixed
+       2-column grid keeps them paired up two at a time instead. */
+    .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    @media (max-width: 760px) {
+      .detail-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .detail-actions .toolbar-btn { width: 100%; white-space: normal; text-align: center; }
+    }
     .pc-check { width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
     .sel-count { font-size: 12px; color: var(--accent); font-weight: 600; align-self: center; }
 
@@ -1921,7 +1931,7 @@
     if (!p) return;
     document.getElementById('modalBox').innerHTML =
       '<h2>Trvale smazat hráče?</h2>' +
-      '<div style="font-size:13px;margin-bottom:18px;">Řádek <b>' + esc(p.jmenoCele) + '</b> bude natrvalo odstraněn z tabulky "Seznam" — včetně rodného čísla, adresy a všech kontaktů. <b style="color:var(--red);">Tuto akci nelze vrátit zpět.</b> Pokud hráč jen opouští klub a chcete si o něm zachovat záznam, použijte místo toho "Přesunout do vyřazených".</div>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Řádek <b>' + esc(p.jmenoCele) + '</b> bude natrvalo odstraněn z tabulky "Seznam" — včetně rodného čísla, adresy a všech kontaktů. <b style="color:var(--red);">Tuto akci nelze vrátit zpět.</b> Pokud hráč jen opouští klub a chcete si o něm zachovat záznam, použijte místo toho "Do vyřazených".</div>' +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
         '<button class="icon-btn toolbar-btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="closeModal();applyDeletePlayerPermanently_(' + sheetRow + ')">Smazat trvale</button>' +
@@ -3749,10 +3759,10 @@
 
     return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">' +
         '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<div class="detail-actions">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
           '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
-          (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Přesunout do vyřazených</button>' : '') +
+          (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Do vyřazených</button>' : '') +
           (isAdmin ? '<button class="icon-btn toolbar-btn" style="color:var(--red);" onclick="confirmDeletePlayerPermanently(' + p.sheetRow + ')">Smazat trvale</button>' : '') +
         '</div>' +
       '</div>' +
