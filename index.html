@@ -3562,7 +3562,12 @@
     if (cache[name]) return Promise.resolve(cache[name]);
     return fetch('https://people.googleapis.com/v1/contactGroups?pageSize=200', {
       headers: { 'Authorization': 'Bearer ' + accessToken }
-    }).then(function(r) { return r.json(); }).then(function(j) {
+    }).then(function(r) {
+      // A failed lookup must not fall through to "not found → create" (that's how duplicate
+      // labels would appear) — report it instead.
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(err) { throw peopleApiError_(err, r.status); });
+      return r.json();
+    }).then(function(j) {
       var found = (j.contactGroups || []).find(function(g) { return g.name === name || g.formattedName === name; });
       if (found) { cache[name] = found.resourceName; saveContactGroupCache_(cache); return found.resourceName; }
       return fetch('https://people.googleapis.com/v1/contactGroups', {
@@ -3579,24 +3584,78 @@
       });
     });
   }
-  function createContact_(fullName, email, phone, groupResourceName, organization) {
-    var spaceIdx = fullName.indexOf(' ');
-    var givenName = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx);
-    var familyName = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1);
-    var body = { names: [{ givenName: givenName, familyName: familyName }] };
-    if (email) body.emailAddresses = [{ value: email }];
-    if (phone) body.phoneNumbers = [{ value: phone }];
-    if (groupResourceName) body.memberships = [{ contactGroupMembership: { contactGroupResourceName: groupResourceName } }];
-    // Guardian contacts: the guardian's own name is the contact name and the child's name goes
-    // into "Společnost", so it's clear in the phone whose parent it is.
-    if (organization) body.organizations = [{ name: organization }];
+  // Google API error -> readable message, including field-level details when Google sends them
+  // (a bare "Request contains an invalid argument." says nothing about WHICH field).
+  function peopleApiError_(err, status) {
+    var e = (err && err.error) || {};
+    var msg = e.message || ('HTTP ' + status);
+    var extra = [];
+    (e.details || []).forEach(function(d) {
+      (d.fieldViolations || []).forEach(function(v) { extra.push((v.field ? v.field + ': ' : '') + (v.description || '')); });
+    });
+    var ex = new Error(msg + (extra.length ? ' (' + extra.join('; ') + ')' : ''));
+    ex.status = status;
+    ex.apiStatus = e.status;
+    return ex;
+  }
+  function postPeopleCreate_(body) {
     return fetch('https://people.googleapis.com/v1/people:createContact', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function(r) {
-      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(err) { throw peopleApiError_(err, r.status); });
       return r.json();
+    });
+  }
+  function addToContactGroup_(groupResourceName, personResourceName) {
+    return fetch('https://people.googleapis.com/v1/' + groupResourceName + '/members:modify', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resourceNamesToAdd: [personResourceName] })
+    }).then(function(r) {
+      if (!r.ok) return r.json().catch(function() { return {}; }).then(function(err) { throw peopleApiError_(err, r.status); });
+      return r.json();
+    });
+  }
+  // A label id remembered in this browser can go stale (label deleted/renamed/merged in Google
+  // Contacts) — Google then rejects the whole contact with "invalid argument". So on a 400 the
+  // cached id is dropped and the label looked up again; if it still fails, the contact is
+  // created WITHOUT the label and the label is added in a separate call afterwards.
+  function createContact_(fullName, email, phone, groupResourceName, organization, groupName) {
+    fullName = String(fullName == null ? '' : fullName).replace(/\s+/g, ' ').trim();
+    email = String(email == null ? '' : email).trim();
+    phone = String(phone == null ? '' : phone).trim();
+    organization = String(organization == null ? '' : organization).replace(/\s+/g, ' ').trim();
+    var spaceIdx = fullName.indexOf(' ');
+    var givenName = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx);
+    var familyName = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1);
+    var base = { names: [{ givenName: givenName, familyName: familyName }] };
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) base.emailAddresses = [{ value: email }];
+    if (phone) base.phoneNumbers = [{ value: phone }];
+    // Guardian contacts: the guardian's own name is the contact name and the child's name goes
+    // into "Společnost", so it's clear in the phone whose parent it is.
+    if (organization) base.organizations = [{ name: organization }];
+    function withGroup(gid) {
+      var b = JSON.parse(JSON.stringify(base));
+      if (gid) b.memberships = [{ contactGroupMembership: { contactGroupResourceName: gid } }];
+      return b;
+    }
+    return postPeopleCreate_(withGroup(groupResourceName)).catch(function(err) {
+      if (err.status !== 400 || !groupResourceName || !groupName) throw err;
+      var cache = loadContactGroupCache_();
+      delete cache[groupName];
+      saveContactGroupCache_(cache);
+      return ensureContactGroup_(groupName).then(function(freshGid) {
+        return postPeopleCreate_(withGroup(freshGid)).catch(function(err2) {
+          if (err2.status !== 400) throw err2;
+          return postPeopleCreate_(withGroup(null)).then(function(person) {
+            return addToContactGroup_(freshGid, person.resourceName).then(function() { return person; }, function(err3) {
+              throw new Error('kontakt vytvořen, ale štítek „' + groupName + '“ se nepřidal: ' + err3.message);
+            });
+          });
+        });
+      });
     });
   }
   // Creates a contact for the player (if a name is present) and, separately, for the
@@ -3609,7 +3668,7 @@
     if (p.jmenoCele) {
       jobs.push(
         ensureContactGroup_(CONTACT_GROUP_NAMES.hraci)
-          .then(function(gid) { return createContact_(p.jmenoCele, p.emailHrac, formatPhoneForContact_(p.telefonHrac), gid); })
+          .then(function(gid) { return createContact_(p.jmenoCele, p.emailHrac, formatPhoneForContact_(p.telefonHrac), gid, '', CONTACT_GROUP_NAMES.hraci); })
           .then(function() { results.push('hráč'); })
           .catch(function(err) { results.push('hráč selhal: ' + err.message); })
       );
@@ -3617,7 +3676,7 @@
     if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
       jobs.push(
         ensureContactGroup_(CONTACT_GROUP_NAMES.rodice)
-          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid, p.jmenoCele); })
+          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid, p.jmenoCele, CONTACT_GROUP_NAMES.rodice); })
           .then(function() { results.push('zástupce'); })
           .catch(function(err) { results.push('zástupce selhal: ' + err.message); })
       );
@@ -3871,7 +3930,7 @@
     findExistingContact_(w.telefon, w.email).then(function(existing) {
       if (existing) { statusText = '✅ Již existoval (přeskočeno) – ' + waDateTime_(); return; }
       return ensureContactGroup_(CONTACT_GROUP_NAMES.rodice).then(function(gid) {
-        return createContact_(w.zastupce || (w.dite + ' - zástupce'), w.email, formatPhoneForContact_(w.telefon), gid, w.dite);
+        return createContact_(w.zastupce || (w.dite + ' - zástupce'), w.email, formatPhoneForContact_(w.telefon), gid, w.dite, CONTACT_GROUP_NAMES.rodice);
       }).then(function() { statusText = '✅ Přidán ' + waDateTime_(); });
     }).then(function() {
       if (!idx || idx.kontakt < 0) return;
