@@ -248,14 +248,15 @@
     .toolbar-btn { width: auto; padding: 8px 14px; font-size: 12px; white-space: nowrap; font-family: inherit; }
     .toolbar-btn:disabled { opacity: .4; cursor: default; }
     /* Player detail card's action row (Editovat / Sdílet kartu / Do vyřazených / Smazat
-       trvale). Plain wrapping flex row on desktop, where there's room for all four side by
-       side; on a phone the same wrap wasn't enough — four nowrap-labelled buttons don't fit
-       one per line, so each ended up alone on its own full-width-looking row. A fixed
-       2-column grid keeps them paired up two at a time instead. */
-    .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+       trvale). All four stay in a single row on every screen size, including mobile: each
+       button shares the row equally (flex:1) and shrinks its padding/font rather than
+       wrapping to a new line, so labels that don't fit on one line wrap onto two lines
+       inside the same button instead of stacking the buttons themselves. */
+    .detail-actions { display: flex; gap: 8px; flex-wrap: nowrap; }
+    .detail-actions .toolbar-btn { flex: 1 1 0; min-width: 0; }
     @media (max-width: 760px) {
-      .detail-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-      .detail-actions .toolbar-btn { width: 100%; white-space: normal; text-align: center; }
+      .detail-actions { gap: 5px; }
+      .detail-actions .toolbar-btn { padding: 7px 3px; font-size: 10.5px; white-space: normal; text-align: center; line-height: 1.25; }
     }
     .pc-check { width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
     .sel-count { font-size: 12px; color: var(--accent); font-weight: 600; align-self: center; }
@@ -3757,14 +3758,11 @@
       return '<div class="info-row"><span>' + esc(label) + '</span><span class="info-value">' + link + (value ? copyBtnHtml(value) : '') + '</span></div>';
     }
 
-    return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">' +
-        '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
-        '<div class="detail-actions">' +
+    return '<div class="detail-actions" style="margin-bottom:18px;">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
           '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Do vyřazených</button>' : '') +
           (isAdmin ? '<button class="icon-btn toolbar-btn" style="color:var(--red);" onclick="confirmDeletePlayerPermanently(' + p.sheetRow + ')">Smazat trvale</button>' : '') +
-        '</div>' +
       '</div>' +
       '<div class="detail-head">' +
         '<div class="detail-photo">' + avatarInnerHtml(p) + '</div>' +
