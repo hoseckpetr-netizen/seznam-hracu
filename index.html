@@ -27,6 +27,11 @@
     .brand .logo { width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .brand .logo img { width: 100%; height: 100%; object-fit: contain; }
     .brand .name { font-weight: 600; font-size: 14px; }
+    .top-search { display: flex; align-items: center; gap: 7px; height: 34px; box-sizing: border-box; padding: 0 10px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); color: var(--muted); cursor: text; min-width: 0; transition: border-color .12s ease; }
+    .top-search:focus-within { border-color: var(--accent); color: var(--accent); }
+    .top-search input { flex: 1; min-width: 0; width: 100%; background: none; border: none; outline: none; color: var(--text); font-family: inherit; font-size: 13px; padding: 0; }
+    .top-search input::placeholder { color: var(--muted); }
+    .top-search-legacy { display: none !important; }
     .brand .icons { display: flex; gap: 8px; margin-left: auto; }
     .icon-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
     .icon-btn:disabled { opacity: .45; cursor: default; }
@@ -308,6 +313,9 @@
       .app { flex-direction: column; }
       .sidebar { width: 100%; flex-direction: column; align-items: stretch; padding: 12px 14px 10px; gap: 10px; }
       .brand { width: 100%; }
+      .brand .name { display: none; }
+      .brand .top-search { flex: 1; height: 36px; }
+      .brand .top-search input { font-size: 16px; } /* ≥16px so iOS doesn't zoom in on focus */
       .brand .icons { display: flex; gap: 8px; margin-left: auto; }
       .sidebar .season { display: none; }
       .cat-list { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
@@ -408,8 +416,8 @@
         position: sticky; top: 0; z-index: 40;
         width: auto; box-sizing: border-box;
         display: grid;
-        grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
-        grid-template-areas: "logo name cats tools icons role" "logo season cats tools icons role";
+        grid-template-columns: auto auto auto minmax(0, 1fr) auto auto auto;
+        grid-template-areas: "logo name search cats tools icons role" "logo season search cats tools icons role";
         align-items: center; column-gap: 14px; row-gap: 1px;
         padding: 10px 24px; border-right: none; border-bottom: 1px solid var(--border);
         background: rgba(14,17,20,0.96); backdrop-filter: blur(6px);
@@ -418,6 +426,7 @@
       .brand .logo { grid-area: logo; width: 30px; height: 30px; }
       .brand .name { grid-area: name; align-self: end; white-space: nowrap; }
       .sidebar .season { grid-area: season; align-self: start; white-space: nowrap; }
+      .brand .top-search { grid-area: search; width: 230px; margin-left: 6px; }
       .cat-list {
         grid-area: cats; flex-direction: row; align-items: center; gap: 6px;
         overflow-x: auto; scrollbar-width: thin; padding: 2px; margin-left: 6px;
@@ -430,7 +439,7 @@
       .cat-item[data-cat="__vyrazeni__"]::before { content: ""; position: absolute; left: -8px; top: 4px; bottom: 4px; width: 1px; background: var(--border); }
       .sidebar-tools { grid-area: tools; grid-template-columns: repeat(6, 32px); gap: 6px; }
       .sidebar-tools .toolbar-btn { height: 32px; }
-      .brand .icons { grid-area: icons; margin-left: 0; display: grid; grid-template-columns: repeat(4, 34px); gap: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
+      .brand .icons { grid-area: icons; margin-left: 0; display: grid; grid-template-columns: repeat(3, 34px); gap: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
       .brand .icons .icon-btn { width: 34px; height: 32px; }
       /* Only "Odhlásit" in the bar — the role ("Přihlášen jako správce") is its tooltip. */
       .role-badge { grid-area: role; margin-top: 0; border-top: none; padding: 0 0 0 14px; border-left: 1px solid var(--border); align-self: stretch; align-items: center; white-space: nowrap; }
@@ -473,6 +482,9 @@
     /* Narrower PC windows: drop the "Seznam hráčů / season" caption (the home icon stays)
        and tighten the bar so the category pills keep as much room as possible; anything
        that still doesn't fit scrolls sideways within the pill strip. */
+    @media (min-width: 761px) and (max-width: 1500px) {
+      .brand .top-search { width: 180px; }
+    }
     @media (min-width: 761px) and (max-width: 1320px) {
       .brand .name, .sidebar .season { display: none; }
       .sidebar { padding: 10px 16px; column-gap: 10px; }
@@ -497,8 +509,12 @@
         <button class="icon-btn logo" type="button" onclick="goHome()" aria-label="Domů" title="Domů (zpět na seznam)" style="background:none;border:none;padding:0;cursor:pointer;">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);"><path d="M3 9.5 12 3l9 6.5"></path><path d="M5 10.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9.5"></path></svg>
         </button><div class="name">Seznam hráčů</div>
+        <label class="top-search" title="Hledat hráče podle jména">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="search" id="topSearch" placeholder="Hledat hráče…" autocomplete="off" oninput="onTopSearch_(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onTopSearch_('');this.blur();}">
+        </label>
         <div class="icons">
-          <button class="icon-btn" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
+          <button class="icon-btn top-search-legacy" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
           <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
@@ -572,7 +588,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – checklist u nových uživatelů';
+  var APP_VERSION = '29. 9. 2026 – vyhledávání v liště';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -1856,7 +1872,20 @@
   // an always-present element — it used to look for a "search" id that no longer exists since
   // the filter panel redesign, so the magnifying-glass icon silently did nothing. It now makes
   // sure the list view + Filtr panel are open first, then focuses the box inside it.
+  // Always-visible search bar in the top bar (PC) / in place of the title (phone). Typing
+  // filters the player list straight away; from a player card, Nastavení or Vyřazení it jumps
+  // back to the list so the results are visible. The bar lives outside #main, so render()
+  // never rebuilds it and the cursor/keyboard stay put while typing.
+  function onTopSearch_(v) {
+    state.q = v;
+    if (state.view !== 'list' && state.view !== 'map') state.view = 'list';
+    var fp = document.getElementById('sidebarSearch');
+    if (fp && fp !== document.activeElement) fp.value = v;
+    render();
+  }
   function focusSearch() {
+    var top = document.getElementById('topSearch');
+    if (top && top.offsetParent !== null) { top.focus(); top.select(); return; }
     if (state.view !== 'list') { state.view = 'list'; render(); }
     var filterBtn = document.querySelector('.sidebar-tools [onclick*="toggleSidebarPanel(\'filter\'"]');
     var panel = document.getElementById('filterPanel');
@@ -4647,6 +4676,8 @@
   var lastRenderKey = null;
   function render() {
     var main = document.getElementById('main');
+    var topSearchEl = document.getElementById('topSearch');
+    if (topSearchEl && topSearchEl !== document.activeElement && topSearchEl.value !== (state.q || '')) topSearchEl.value = state.q || '';
     var renderKey = state.view + (state.view === 'detail' ? (':' + state.selectedRow) : '');
     var isNavigation = renderKey !== lastRenderKey;
     lastRenderKey = renderKey;
