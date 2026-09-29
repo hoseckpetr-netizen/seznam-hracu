@@ -3762,7 +3762,7 @@
         ('<td class="pt-num">' + esc(p.datumVyrazeni || '—') + '</td>');
       return '<tr onclick="' + clickAction(p) + '">' +
         checkboxCell +
-        '<td><div class="ring" style="' + ringStyle(showChecklist ? pct : 0, p.categoryColor) + '"><div class="ring-hole">' + avatarInnerHtml(p, 60) + '</div></div></td>' +
+        '<td><div class="ring" style="' + ringStyle(showChecklist ? pct : 0) + '"><div class="ring-hole">' + avatarInnerHtml(p, 60) + '</div></div></td>' +
         '<td class="pt-name">' + esc(p.jmenoCele) + '</td>' +
         '<td><span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + '</span></td>' +
         '<td class="pt-num">' + esc(p.datumNarozeni) + (p.vek ? ' <span class="pt-sub">(' + esc(p.vek) + ' let)</span>' : '') + '</td>' +
