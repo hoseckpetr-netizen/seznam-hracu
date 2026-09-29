@@ -426,7 +426,11 @@
 
       /* Swap the mobile/tablet card list for the dense, all-fields table. */
       .player-list { display: none; }
-      .player-table-wrap { display: block; }
+      /* The table is its own scroll box sized to the window, so its horizontal scrollbar
+         sits at the bottom of the screen (not below all 150+ rows) and the column headers
+         stay pinned at the top while scrolling down — like a spreadsheet. */
+      .player-table-wrap { display: block; overflow: auto; max-height: calc(100vh - 150px); min-height: 320px; }
+      .player-table th { z-index: 2; }
 
       /* Nastavení on PC: a centred, width-capped page with two titled groups. */
       .settings-page { max-width: 1320px; margin: 0 auto; }
@@ -4284,6 +4288,7 @@
     // right, so remember the wide table's horizontal scroll and put it back after the swap.
     var prevTableWrap = main.querySelector('.player-table-wrap');
     var prevTableScrollX = (!isNavigation && prevTableWrap) ? prevTableWrap.scrollLeft : 0;
+    var prevTableScrollY = (!isNavigation && prevTableWrap) ? prevTableWrap.scrollTop : 0;
     closeCkPopover_();
     if (state.view === 'detail') {
       main.innerHTML = renderDetailView();
@@ -4311,9 +4316,9 @@
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
       window.scrollTo(0, 0);
-    } else if (prevTableScrollX) {
+    } else if (prevTableScrollX || prevTableScrollY) {
       var newTableWrap = main.querySelector('.player-table-wrap');
-      if (newTableWrap) newTableWrap.scrollLeft = prevTableScrollX;
+      if (newTableWrap) { newTableWrap.scrollLeft = prevTableScrollX; newTableWrap.scrollTop = prevTableScrollY; }
     }
 
     // Sdílet/Filtr/Zrušit filtr/Aktualizovat and the category chips only make sense against
