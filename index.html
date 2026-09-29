@@ -1195,8 +1195,13 @@
   // ---------- "Vyřazené" (players who left the club) ----------
   // Structurally different from "Seznam": it's an older layout where the checklist item
   // names live in the row ABOVE the header row (not in the header row itself), and the
-  // checklist itself uses its own older set of item names. Read-only in the app — Petr
-  // moves a player's row into this sheet by hand in Google Sheets when they leave.
+  // checklist itself uses its own older set of item names. The list itself is still
+  // read-only in the app (its own checklist is never toggled from here) — but a player's
+  // identifying/contact fields CAN be written here now, from the detail card's "Přesunout
+  // do vyřazených" action (see moveToVyrazeniApply_ below), which appends a fresh row here
+  // (its own return-eligibility checklist starts unchecked — it tracks different steps than
+  // the active roster's checklist, so nothing from there is carried over) and then deletes
+  // the original row from "Seznam".
   var VYRAZENE_CHECKLIST_KEYS = ['NSA', 'FAČR', 'PLATBA FAČR', 'ČLEN KLUBU', 'HRÁČ KLUBU', 'PŘIIHLÁŠKA', 'KONTAKT', 'WHATS UP', 'FOTO PC', 'FOTO', 'PLATBA ÚČET', 'PLATBA CASH'];
   var VYRAZENE_CHECKLIST_LABELS = {
     'NSA': 'NSA', 'FAČR': 'Registrace FAČR', 'PLATBA FAČR': 'Platba FAČR', 'ČLEN KLUBU': 'Člen klubu',
@@ -1535,9 +1540,13 @@
           players.forEach(function (p) { if (p.mesto) cities[p.mesto] = true; });
 
           var vyrazeni = [];
+          var vyrazeniColIndex = null;
+          var vyrazeniHeaderRowIdx = null;
           try {
             var parsedV = parseVyrazeneRoster_(vyrazeneValues);
             vyrazeni = parsedV.players;
+            vyrazeniColIndex = parsedV.colIndex;
+            vyrazeniHeaderRowIdx = parsedV.headerRowIdx;
             vyrazeni.forEach(function(p) {
               p.categoryGroup = p.kategorie || 'Nezařazeno';
               p.categoryColor = colorForLabel_(p.categoryGroup);
@@ -1559,6 +1568,8 @@
           DATA = {
             players: players,
             vyrazeni: vyrazeni,
+            vyrazeniColIndex: vyrazeniColIndex,
+            vyrazeniHeaderRowIdx: vyrazeniHeaderRowIdx,
             pending: pending,
             pendingColIndex: pendingColIndex,
             categoryRules: rulesWithColor,
@@ -1798,6 +1809,139 @@
       '<div class="checklist-wrap" style="margin-top:10px;">' + checklistRows + '</div>' +
       '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
     document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  // ---------- Detail card: přesunout do vyřazených / smazat trvale ----------
+  // Both delete a row out of "Seznam" via the Sheets API's deleteDimension request, which
+  // needs the sheet's own numeric sheetId (not its name) — fetched once and cached here,
+  // since the app otherwise never needs anything beyond the values:* endpoints (which take
+  // a sheet by name).
+  var sheetIdCache_ = null;
+  function getSheetId_(title) {
+    if (sheetIdCache_ && sheetIdCache_[title] != null) return Promise.resolve(sheetIdCache_[title]);
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '?fields=' + encodeURIComponent('sheets.properties(sheetId,title)'), {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function(json) {
+      sheetIdCache_ = {};
+      (json.sheets || []).forEach(function(s) { sheetIdCache_[s.properties.title] = s.properties.sheetId; });
+      if (sheetIdCache_[title] == null) throw new Error('List "' + title + '" v tabulce nebyl nalezen.');
+      return sheetIdCache_[title];
+    });
+  }
+  // Deletes exactly one row from "Seznam" by its 1-based sheet row number. Used by both
+  // actions below — the only difference between them is whether a copy of the player's
+  // data is written to "Vyřazené" first.
+  function deleteSeznamRow_(sheetRow) {
+    return getSheetId_('Seznam').then(function(seznamSheetId) {
+      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + ':batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+          sheetId: seznamSheetId, dimension: 'ROWS', startIndex: sheetRow - 1, endIndex: sheetRow
+        } } }] })
+      });
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    });
+  }
+
+  function confirmMoveToVyrazeni(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Potvrzení</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Přesunout <b>' + esc(p.jmenoCele) + '</b> do "Vyřazení hráči"? Řádek zmizí ze "Seznam" a objeví se ve Vyřazených se základními kontaktními údaji (checklist Vyřazených začíná nezaškrtnutý — sleduje jiné kroky než checklist registrace). Pro návrat do klubu ho pak bude potřeba znovu ručně přidat.</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyMoveToVyrazeni_(' + sheetRow + ')">Přesunout</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function applyMoveToVyrazeni_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p || !DATA.vyrazeniColIndex) return;
+    var vIdx = DATA.vyrazeniColIndex;
+    var maxRow = (DATA.vyrazeni || []).reduce(function(m, x) { return Math.max(m, x.sheetRow); }, DATA.vyrazeniHeaderRowIdx + 1);
+    var targetRow = maxRow + 1;
+    var dataArr = [];
+    function put(colKey, value, forceText) {
+      var colIdx = vIdx[colKey];
+      if (colIdx == null || colIdx < 0 || value === '' || value == null) return;
+      dataArr.push({ range: 'Vyřazené!' + colIndexToLetter(colIdx) + targetRow, values: [[forceText ? ("'" + value) : value]] });
+    }
+    put('prijmeni', p.prijmeni);
+    put('jmeno', p.jmeno);
+    put('datumVyrazeni', formatDateCz_());
+    put('rok', p.rok);
+    put('kategorie', p.kategorie);
+    put('datumNarozeni', p.datumNarozeni, true);
+    put('vek', p.vek);
+    put('pohlavi', p.pohlavi);
+    put('adresa', p.ulice);
+    put('cp', p.cp);
+    put('mesto', p.mesto);
+    put('psc', p.psc);
+    put('emailHrac', p.emailHrac);
+    put('telefonHrac', p.telefonHrac, true);
+    put('id', p.id);
+    put('zastupceJmeno', p.zastupceJmeno);
+    put('zastupceTelefon', p.zastupceTelefon, true);
+    put('zastupceEmail', p.zastupceEmail);
+    if (!dataArr.length) return;
+
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: dataArr })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function() {
+      return deleteSeznamRow_(p.sheetRow);
+    }).then(function() {
+      pushNotification('Hráč ' + p.jmenoCele + ' byl přesunut do Vyřazených.', 'info');
+      state.view = 'list';
+      state.selectedRow = null;
+      loadData();
+    }).catch(function(err) {
+      pushNotification('Přesun hráče ' + p.jmenoCele + ' do Vyřazených selhal: ' + err.message, 'error');
+    });
+  }
+
+  function confirmDeletePlayerPermanently(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Trvale smazat hráče?</h2>' +
+      '<div style="font-size:13px;margin-bottom:18px;">Řádek <b>' + esc(p.jmenoCele) + '</b> bude natrvalo odstraněn z tabulky "Seznam" — včetně rodného čísla, adresy a všech kontaktů. <b style="color:var(--red);">Tuto akci nelze vrátit zpět.</b> Pokud hráč jen opouští klub a chcete si o něm zachovat záznam, použijte místo toho "Přesunout do vyřazených".</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="closeModal();applyDeletePlayerPermanently_(' + sheetRow + ')">Smazat trvale</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function applyDeletePlayerPermanently_(sheetRow) {
+    if (!DATA || DATA.role !== 'admin') return;
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    if (!p) return;
+    var name = p.jmenoCele;
+    deleteSeznamRow_(sheetRow).then(function() {
+      pushNotification('Hráč ' + name + ' byl trvale smazán.', 'info');
+      state.view = 'list';
+      state.selectedRow = null;
+      loadData();
+    }).catch(function(err) {
+      pushNotification('Smazání hráče ' + name + ' selhalo: ' + err.message, 'error');
+    });
   }
 
   // ---------- Selection mode (for PDF sharing) ----------
@@ -3605,9 +3749,11 @@
 
     return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">' +
         '<button class="detail-back" onclick="backToList()" style="margin-bottom:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Zpět na seznam</button>' +
-        '<div style="display:flex;gap:8px;">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
           '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
+          (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Přesunout do vyřazených</button>' : '') +
+          (isAdmin ? '<button class="icon-btn toolbar-btn" style="color:var(--red);" onclick="confirmDeletePlayerPermanently(' + p.sheetRow + ')">Smazat trvale</button>' : '') +
         '</div>' +
       '</div>' +
       '<div class="detail-head">' +
