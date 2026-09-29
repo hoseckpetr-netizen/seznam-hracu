@@ -622,6 +622,58 @@
     d = d || new Date();
     return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
   }
+  // "14.6.2012" / "14. 6. 2012" -> Date (or null).
+  function parseCzDate_(s) {
+    var m = String(s == null ? '' : s).match(/^\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s*$/);
+    if (!m) return null;
+    var d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return (d.getMonth() === +m[2] - 1) ? d : null;
+  }
+  // Birth dates are written to the sheet as ISO "2012-06-14" with USER_ENTERED, which Google
+  // Sheets stores as a real date in any locale. They used to be written as forced text, which
+  // broke the sheet's "Věk" formula (#VALUE!: IF expects a boolean, got text "14.6.2012").
+  function birthDateForSheet_(s) {
+    var d = parseCzDate_(s);
+    if (!d) return s;
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  // One-off self-repair for rows added by an older app version: their birth date was saved as
+  // text, so the sheet's "Věk" formula shows an error. Only rows whose Věk cell is currently
+  // an error are touched, and only the birth-date cell — rewritten as the same date, but as a
+  // real date value. Admin only; runs after each load and does nothing once all are fixed.
+  function repairBirthDates_() {
+    if (!DATA || DATA.role !== 'admin' || !DATA.colIndex || DATA.colIndex.datumNarozeni == null || DATA.colIndex.datumNarozeni < 0) return;
+    var bad = DATA.players.filter(function(p) { return p.vekError && parseCzDate_(p.datumNarozeni); });
+    if (!bad.length) return;
+    var col = colIndexToLetter(DATA.colIndex.datumNarozeni);
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: bad.map(function(p) {
+        return { range: 'Seznam!' + col + p.sheetRow, values: [[birthDateForSheet_(p.datumNarozeni)]] };
+      }) })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      bad.forEach(function(p) { p.vekError = false; });
+      pushNotification('Opraveno datum narození v tabulce (věk se zobrazoval s chybou): ' + bad.map(function(p) { return p.jmenoCele; }).join(', ') + '.', 'info');
+    }).catch(function(err) {
+      pushNotification('Oprava data narození se nezdařila: ' + err.message, 'error');
+    });
+  }
+  function ageFromCzDate_(s) {
+    var d = parseCzDate_(s);
+    if (!d) return '';
+    var now = new Date();
+    var age = now.getFullYear() - d.getFullYear();
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--;
+    return age;
+  }
+  // A formula error in the sheet's "Věk" cell (e.g. "#VALUE!…") is never shown as the age —
+  // the age is computed from the birth date instead.
+  function cleanVek_(vek, datumNarozeni) {
+    if (typeof vek === 'string' && vek.charAt(0) === '#') return ageFromCzDate_(datumNarozeni);
+    return vek;
+  }
   // Which checklist items are disabled (excluded from the player card display and from the
   // "kroků hotovo" progress count) — managed from Nastavení, saved per-browser like the
   // category overrides, since there's no spare sheet column to hold this. Everything is
@@ -1277,7 +1329,8 @@
         rok: val_(row, idx.rok),
         kategorie: val_(row, idx.kategorie),
         datumNarozeni: val_(row, idx.datumNarozeni),
-        vek: val_(row, idx.vek),
+        vek: cleanVek_(val_(row, idx.vek), val_(row, idx.datumNarozeni)),
+        vekError: String(val_(row, idx.vek)).charAt(0) === '#',
         pohlavi: val_(row, idx.pohlavi),
         ulice: val_(row, idx.ulice),
         cp: val_(row, idx.cp),
@@ -1371,7 +1424,7 @@
         rok: val_(row, idx.rok),
         kategorie: val_(row, idx.kategorie),
         datumNarozeni: val_(row, idx.datumNarozeni),
-        vek: val_(row, idx.vek),
+        vek: cleanVek_(val_(row, idx.vek), val_(row, idx.datumNarozeni)),
         pohlavi: val_(row, idx.pohlavi),
         ulice: val_(row, idx.adresa), // "Adresa" column here plays the same role as "Ulice" in Seznam
         cp: val_(row, idx.cp),
@@ -1697,6 +1750,7 @@
             if (state.view === 'settings') render();
           });
           loadWaRequests_();
+          repairBirthDates_();
           applyCachedPhotosToRoster();
           renderCatList();
           render();
@@ -1989,7 +2043,7 @@
     put('datumVyrazeni', formatDateCz_());
     put('rok', p.rok);
     put('kategorie', p.kategorie);
-    put('datumNarozeni', p.datumNarozeni, true);
+    put('datumNarozeni', birthDateForSheet_(p.datumNarozeni));
     put('vek', p.vek);
     put('pohlavi', p.pohlavi);
     put('adresa', p.ulice);
@@ -3341,9 +3395,8 @@
     }
     put('prijmeni', p.prijmeni);
     put('jmeno', p.jmeno);
-    // Force text — "D.M.RRRR" would otherwise be auto-detected as a date and stored as a
-    // date serial instead of the literal string every other birth date in the sheet uses.
-    put('datumNarozeni', p.datumNarozeni, true);
+    // Real date (ISO, locale-proof) — the sheet's "Věk" formula needs a date, not text.
+    put('datumNarozeni', birthDateForSheet_(p.datumNarozeni));
     put('rok', p.rok);
     put('rodneCislo', p.rodneCislo, true);
     put('ulice', p.ulice);
@@ -3526,7 +3579,7 @@
       });
     });
   }
-  function createContact_(fullName, email, phone, groupResourceName) {
+  function createContact_(fullName, email, phone, groupResourceName, organization) {
     var spaceIdx = fullName.indexOf(' ');
     var givenName = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx);
     var familyName = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1);
@@ -3534,6 +3587,9 @@
     if (email) body.emailAddresses = [{ value: email }];
     if (phone) body.phoneNumbers = [{ value: phone }];
     if (groupResourceName) body.memberships = [{ contactGroupMembership: { contactGroupResourceName: groupResourceName } }];
+    // Guardian contacts: the guardian's own name is the contact name and the child's name goes
+    // into "Společnost", so it's clear in the phone whose parent it is.
+    if (organization) body.organizations = [{ name: organization }];
     return fetch('https://people.googleapis.com/v1/people:createContact', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
@@ -3561,7 +3617,7 @@
     if (p.zastupceJmeno || p.zastupceEmail || p.zastupceTelefon) {
       jobs.push(
         ensureContactGroup_(CONTACT_GROUP_NAMES.rodice)
-          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid); })
+          .then(function(gid) { return createContact_(p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), p.zastupceEmail, formatPhoneForContact_(p.zastupceTelefon), gid, p.jmenoCele); })
           .then(function() { results.push('zástupce'); })
           .catch(function(err) { results.push('zástupce selhal: ' + err.message); })
       );
@@ -3815,7 +3871,7 @@
     findExistingContact_(w.telefon, w.email).then(function(existing) {
       if (existing) { statusText = '✅ Již existoval (přeskočeno) – ' + waDateTime_(); return; }
       return ensureContactGroup_(CONTACT_GROUP_NAMES.rodice).then(function(gid) {
-        return createContact_(w.zastupce || (w.dite + ' - zástupce'), w.email, formatPhoneForContact_(w.telefon), gid);
+        return createContact_(w.zastupce || (w.dite + ' - zástupce'), w.email, formatPhoneForContact_(w.telefon), gid, w.dite);
       }).then(function() { statusText = '✅ Přidán ' + waDateTime_(); });
     }).then(function() {
       if (!idx || idx.kontakt < 0) return;
