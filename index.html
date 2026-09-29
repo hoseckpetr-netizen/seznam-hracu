@@ -403,27 +403,32 @@
       .sidebar .season { grid-area: season; align-self: start; white-space: nowrap; }
       .cat-list {
         grid-area: cats; flex-direction: row; align-items: center; gap: 6px;
-        overflow-x: auto; scrollbar-width: thin; padding: 2px 2px 3px; margin-left: 10px;
+        overflow-x: auto; scrollbar-width: thin; padding: 2px; margin-left: 6px;
       }
-      .cat-item { white-space: nowrap; flex-shrink: 0; border-radius: 999px; padding: 5px 12px; border: 1px solid var(--border); background: var(--card); font-size: 12.5px; transition: border-color .12s ease, color .12s ease; }
+      .cat-item { white-space: nowrap; flex-shrink: 0; gap: 6px; border-radius: 999px; padding: 5px 10px; border: 1px solid var(--border); background: var(--card); font-size: 12.5px; transition: border-color .12s ease, color .12s ease; }
+      .cat-item .cat-long { display: none; }
       .cat-item:hover { border-color: #3a4450; color: var(--text); }
       .cat-item.active { background: rgba(0,255,255,0.13); border-color: var(--accent); color: var(--text); }
-      .cat-item[data-cat="__vyrazeni__"] { margin: 0 0 0 8px; padding: 5px 12px; border-top: 1px solid var(--border); border-radius: 999px; position: relative; }
+      .cat-item[data-cat="__vyrazeni__"] { margin: 0 0 0 8px; padding: 5px 10px; border-top: 1px solid var(--border); border-radius: 999px; position: relative; }
       .cat-item[data-cat="__vyrazeni__"]::before { content: ""; position: absolute; left: -8px; top: 4px; bottom: 4px; width: 1px; background: var(--border); }
       .sidebar-tools { grid-area: tools; grid-template-columns: repeat(6, 32px); gap: 6px; }
       .sidebar-tools .toolbar-btn { height: 32px; }
       .brand .icons { grid-area: icons; margin-left: 0; display: grid; grid-template-columns: repeat(4, 34px); gap: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
       .brand .icons .icon-btn { width: 34px; height: 32px; }
-      .role-badge { grid-area: role; margin-top: 0; border-top: none; padding: 0 0 0 14px; border-left: 1px solid var(--border); flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; white-space: nowrap; font-size: 10.5px; }
+      /* Only "Odhlásit" in the bar — the role ("Přihlášen jako správce") is its tooltip. */
+      .role-badge { grid-area: role; margin-top: 0; border-top: none; padding: 0 0 0 14px; border-left: 1px solid var(--border); align-self: stretch; align-items: center; white-space: nowrap; }
+      .role-badge span { display: none; }
+      .role-badge button:hover { color: var(--accent); }
 
       /* Swap the mobile/tablet card list for the dense, all-fields table. */
       .player-list { display: none; }
       .player-table-wrap { display: block; }
     }
-    /* Narrower PC windows: drop the "Přihlášen jako …" text (keep Odhlásit) so the
-       category pills keep as much room as possible. */
-    @media (min-width: 761px) and (max-width: 1180px) {
-      .role-badge span { display: none; }
+    /* Narrower PC windows: drop the "Seznam hráčů / season" caption (the home icon stays)
+       and tighten the bar so the category pills keep as much room as possible; anything
+       that still doesn't fit scrolls sideways within the pill strip. */
+    @media (min-width: 761px) and (max-width: 1320px) {
+      .brand .name, .sidebar .season { display: none; }
       .sidebar { padding: 10px 16px; column-gap: 10px; }
     }
   </style>
@@ -1661,7 +1666,7 @@
           };
 
           document.getElementById('season').textContent = DATA.season;
-          document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()">Odhlásit</button>';
+          document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()" title="' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '">Odhlásit</button>';
           // Fetched separately (not in the main batchGet above) so a missing/not-yet-created
           // "Email" tab can never break the main roster load — it just falls back to a default.
           fetchEmailTemplate_().then(function(tmpl) {
@@ -4056,7 +4061,7 @@
       return '<div class="cat-item' + (state.categories.indexOf(r.label) !== -1 ? ' active' : '') + '" data-cat="' + esc(r.label) + '">' +
         '<span class="dot" style="background:' + esc(r.color) + '"></span>' + esc(displayCategoryLabel(r.label)) + '</div>';
     }).join('');
-    html += '<div class="cat-item" data-cat="__vyrazeni__"><span class="dot" style="background:#5a6169"></span>Vyřazení hráči</div>';
+    html += '<div class="cat-item" data-cat="__vyrazeni__"><span class="dot" style="background:#5a6169"></span><span>Vyřazení<span class="cat-long"> hráči</span></span></div>';
     var el = document.getElementById('catList');
     el.innerHTML = html;
     Array.prototype.forEach.call(el.children, function(child) {
