@@ -549,7 +549,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – kontakt zástupce + společnost';
+  var APP_VERSION = '29. 9. 2026 – fotky bez ohledu na diakritiku';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -914,9 +914,19 @@
   // player's photo shows instantly, offline, in this browser, with no repeat Drive calls.
   var photoIndex = null;       // name -> {id, name}, built lazily on first import
   var photoIndexPromise = null;
+  var photoIndexBuiltAt = 0;
   var PHOTO_CACHE_KEY = 'fks_photo_cache_v1';
   function normalizePhotoKey(s) {
     return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+  // Matching key for the Drive folder listing only (NOT the localStorage cache key above,
+  // so already-cached photos keep their keys): ignores diacritics and Unicode form — a file
+  // named "Poříz David" must still match a sheet row spelled "Pořiz" — plus underscores,
+  // hyphens and extra spaces.
+  function photoMatchKey_(s) {
+    var t = (s || '').toString();
+    try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+    return t.toLowerCase().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
   function loadPhotoCache() {
     try { return JSON.parse(localStorage.getItem(PHOTO_CACHE_KEY) || '{}'); } catch (e) { return {}; }
@@ -972,8 +982,9 @@
     }
     photoIndexPromise = fetchPage(null, []).then(function(files) {
       var idx = {};
-      files.forEach(function(f) { idx[normalizePhotoKey(f.name.replace(/\.[^.]+$/, ''))] = f; });
+      files.forEach(function(f) { idx[photoMatchKey_(f.name.replace(/\.[^.]+$/, ''))] = f; });
       photoIndex = idx;
+      photoIndexBuiltAt = Date.now();
       return idx;
     }).catch(function(err) {
       photoIndexPromise = null; // allow a retry on the next import attempt
@@ -1000,11 +1011,23 @@
     var key = normalizePhotoKey(p.prijmeni + ' ' + p.jmeno);
     var cache = getPhotoCacheMem();
     if (cache[key]) { p.photoDataUrl = cache[key]; if (!skipRender) render(); return Promise.resolve(true); }
+    // Most photos are named "Příjmení Jméno", but a few get added as "Jméno Příjmení"
+    // (natural reading order) instead — try both before giving up, so a photo doesn't
+    // silently fail to match just because of word order.
+    function lookup(idx) {
+      return idx[photoMatchKey_(p.prijmeni + ' ' + p.jmeno)] || idx[photoMatchKey_(p.jmeno + ' ' + p.prijmeni)] || null;
+    }
     return ensurePhotoIndex().then(function(idx) {
-      // Most photos are named "Příjmení Jméno", but a few get added as "Jméno Příjmení"
-      // (natural reading order) instead — try both before giving up, so a photo doesn't
-      // silently fail to match just because of word order.
-      var f = idx[key] || idx[normalizePhotoKey(p.jmeno + ' ' + p.prijmeni)];
+      // (Only if the listing is older than a minute — the automatic import after load runs
+      // for many players at once and must not re-list the folder for every single miss.)
+      if (lookup(idx) || Date.now() - photoIndexBuiltAt < 60000) return idx;
+      // Not in the listing read earlier — the photo may have been uploaded since. Re-read
+      // the folder once before giving up.
+      photoIndex = null;
+      photoIndexPromise = null;
+      return ensurePhotoIndex();
+    }).then(function(idx) {
+      var f = lookup(idx);
       if (!f) {
         if (!silent) pushNotification('Fotka pro ' + p.jmenoCele + ' nenalezena ve složce "Fotky hráčů" (hledáno jako "' + p.prijmeni + ' ' + p.jmeno + '").', 'warn');
         return false;
