@@ -348,6 +348,21 @@
     .player-table .pt-progress-fill { height: 100%; border-radius: 999px; }
     .player-table .pt-progress-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
     .player-table .pt-check-cell { width: 1%; }
+    /* Per-step checklist columns (desktop table) — narrow columns with vertical headers,
+       mirroring the checkbox block in the Google Sheet. */
+    .player-table thead th { vertical-align: bottom; }
+    .player-table th.pt-ck-th { padding: 8px 0 10px; width: 24px; min-width: 24px; text-align: center; }
+    .player-table th.pt-ck-th span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; font-size: 10px; letter-spacing: .04em; line-height: 1; }
+    .player-table td.pt-ck { padding: 7px 3px; text-align: center; width: 24px; }
+    .player-table .pt-ck-first { border-left: 1px solid var(--border); padding-left: 8px; }
+    .player-table .ck { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid #3a4048; vertical-align: middle; }
+    .player-table .ck.on { background: rgba(0,255,255,0.16); border-color: var(--accent); color: var(--accent); }
+    .player-table th.pt-ck-count-th, .player-table td.pt-ck-count { text-align: right; padding-left: 10px; }
+    .player-table td.pt-ck-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .player-table td.pt-ck-count.all { color: var(--accent); }
+    /* Keep the name visible while scrolling sideways through the step columns. */
+    .player-table td.pt-name { position: sticky; left: 0; background: var(--card); z-index: 1; }
+    .player-table tbody tr:hover td.pt-name { background: #1b2226; }
 
     @media (min-width: 761px) {
       .brand { flex-wrap: wrap; row-gap: 10px; }
@@ -3649,18 +3664,28 @@
   // mobile/tablet card list in the DOM — CSS (≥761px) decides which one is visible,
   // so both list views (Aktivní hráči / Vyřazení hráči) share one renderer here and
   // the phone/tablet layout is completely untouched.
+  var CK_TICK_SVG_ = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
   function playerTableHtml_(players, opts) {
     opts = opts || {};
     var selectable = !!opts.selectable;
     var showChecklist = opts.showChecklist !== false;
     var clickAction = opts.clickAction || function(p) { return 'openDetail(' + p.sheetRow + ')'; };
+    var disabledCk = loadDisabledChecklistKeys_();
+    var ckKeys = CHECKLIST_KEYS.filter(function(k) { return disabledCk.indexOf(k) === -1; });
     var rows = players.map(function(p) {
       var c = checklistCounts(p);
       var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
       var checkboxCell = selectable ?
         ('<td class="pt-check-cell" onclick="event.stopPropagation();"><input type="checkbox" class="pc-check" onclick="toggleSelect(' + p.sheetRow + ')"' + (state.selected[p.sheetRow] ? ' checked' : '') + '></td>') : '';
+      // Active list: one narrow column per checklist step (like the Google Sheet), plus a
+      // compact done/total count. Vyřazení list keeps its single "Vyřazen" date column.
       var statusCell = showChecklist ?
-        ('<td><div class="pt-progress"><div class="pt-progress-bar"><div class="pt-progress-fill" style="width:' + pct + '%;background:' + esc(p.categoryColor) + '"></div></div><span class="pt-progress-label">' + (c.total > 0 && c.done === c.total ? 'Vše hotovo' : (c.done + '/' + c.total)) + '</span></div></td>') :
+        (ckKeys.map(function(key, i) {
+          var on = !!p.checklist[key];
+          return '<td class="pt-ck' + (i === 0 ? ' pt-ck-first' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + ': ' + (on ? 'hotovo' : 'chybí') + '">' +
+            '<span class="ck' + (on ? ' on' : '') + '">' + (on ? CK_TICK_SVG_ : '') + '</span></td>';
+        }).join('') +
+        '<td class="pt-ck-count' + (c.total > 0 && c.done === c.total ? ' all' : '') + '">' + c.done + '/' + c.total + '</td>') :
         ('<td class="pt-num">' + esc(p.datumVyrazeni || '—') + '</td>');
       return '<tr onclick="' + clickAction(p) + '">' +
         checkboxCell +
@@ -3680,7 +3705,11 @@
       '</tr>';
     }).join('');
     var checkboxTh = selectable ? '<th></th>' : '';
-    var statusTh = showChecklist ? '<th>Checklist</th>' : '<th>Vyřazen</th>';
+    var statusTh = showChecklist ?
+      (ckKeys.map(function(key, i) {
+        return '<th class="pt-ck-th' + (i === 0 ? ' pt-ck-first' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + '"><span>' + esc(key) + '</span></th>';
+      }).join('') + '<th class="pt-ck-count-th">Hotovo</th>') :
+      '<th>Vyřazen</th>';
     return '<div class="player-table-wrap"><table class="player-table"><thead><tr>' +
       checkboxTh +
       '<th></th><th>Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Telefon hráče</th><th>E-mail hráče</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
