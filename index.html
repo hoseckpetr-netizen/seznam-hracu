@@ -693,7 +693,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – hlášení nedostupných fotek';
+  var APP_VERSION = '1. 10. 2026 – volba mobilní / PC zobrazení';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2025,12 +2025,76 @@
       var mq = window.matchMedia('(max-width: 760px)');
       var apply = function() {
         var el = document.getElementById('topSearch');
-        if (el) el.placeholder = mq.matches ? 'Hledat hráče…' : 'Hledat jméno, telefon, e-mail, ID…';
+        if (el) el.placeholder = (typeof isPcLayout_ === 'function' ? !isPcLayout_() : mq.matches) ? 'Hledat hráče…' : 'Hledat jméno, telefon, e-mail, ID…';
       };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); else apply();
       if (mq.addEventListener) mq.addEventListener('change', apply); else if (mq.addListener) mq.addListener(apply);
     } catch (e) {}
   })();
+
+  // ---------- Zobrazení: mobilní / počítač ----------
+  // Chrome on a phone with "Verze pro počítač" (desktop site) turned on — it remembers that
+  // per site — renders the page 980px wide, so the PC media queries kick in. In "Automaticky"
+  // the app detects a phone from the physical screen size and forces the mobile layout anyway
+  // (rewriting the page's own media rules and zooming to the real screen width). "Mobilní" /
+  // "Počítač" force one layout regardless. Kept per browser (localStorage).
+  var LAYOUT_MODE_KEY = 'fks_layout_mode_v1';
+  var layoutForced_ = '';   // '', 'mobile' or 'pc'
+  function getLayoutMode_() { try { return localStorage.getItem(LAYOUT_MODE_KEY) || 'auto'; } catch (e) { return 'auto'; } }
+  function isPcLayout_() {
+    if (layoutForced_ === 'mobile') return false;
+    if (layoutForced_ === 'pc') return true;
+    return !!(window.matchMedia && window.matchMedia('(min-width: 761px)').matches);
+  }
+  function applyLayoutMode_() {
+    var mode = getLayoutMode_();
+    var phone = false;
+    try { phone = window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) <= 760; } catch (e) {}
+    var wide = window.innerWidth > 760;
+    var forced = '';
+    if (mode === 'mobile' && wide) forced = 'mobile';
+    else if (mode === 'pc' && !wide) forced = 'pc';
+    else if (mode === 'auto' && phone && wide) forced = 'mobile';
+    layoutForced_ = forced;
+    Array.prototype.forEach.call(document.styleSheets, function(sheet) {
+      var rules; try { rules = sheet.cssRules; } catch (e) { return; }
+      Array.prototype.forEach.call(rules || [], function(rule) {
+        if (!rule.media || rule.type !== 4) return;
+        if (rule._fksOrig == null) rule._fksOrig = rule.media.mediaText;
+        var t = rule._fksOrig;
+        if (forced === 'mobile') {
+          t = t.replace(/\(min-width:\s*(\d+)px\)/g, function(m, n) { return +n >= 761 ? '(min-width: 100000px)' : m; })
+               .replace(/\(max-width:\s*(\d+)px\)/g, function(m, n) { return +n >= 760 ? '(min-width: 0px)' : m; });
+        } else if (forced === 'pc') {
+          t = t.replace(/\(min-width:\s*(\d+)px\)/g, function(m, n) { return +n <= 761 ? '(min-width: 0px)' : m; })
+               .replace(/\(max-width:\s*(\d+)px\)/g, function(m, n) { return +n <= 760 ? '(min-width: 100000px)' : m; });
+        }
+        if (rule.media.mediaText !== t) rule.media.mediaText = t;
+      });
+    });
+    // Desktop-site mode lays the page out ~980px wide and shrinks it; scale the mobile layout
+    // back up to the phone's real width so it isn't tiny.
+    var z = '';
+    if (forced === 'mobile' && screen.width && window.innerWidth > screen.width * 1.15) z = String(Math.round(window.innerWidth / screen.width * 100) / 100);
+    document.documentElement.style.zoom = z;
+  }
+  function setLayoutMode_(mode) {
+    try { localStorage.setItem(LAYOUT_MODE_KEY, mode); } catch (e) {}
+    applyLayoutMode_();
+    render();
+  }
+  function layoutModeBoxHtml_() {
+    var mode = getLayoutMode_();
+    var opt = function(v, label, hint) {
+      return '<label class="share-field-row"><input type="radio" name="layoutMode" value="' + v + '"' + (mode === v ? ' checked' : '') + ' onchange="setLayoutMode_(\'' + v + '\')"> <b>' + label + '</b> <span style="color:var(--muted);font-size:12px;">— ' + hint + '</span></label>';
+    };
+    return '<div style="font-size:12px;color:var(--muted);">Platí jen pro toto zařízení a prohlížeč.</div>' +
+      opt('auto', 'Automaticky', 'na telefonu mobilní, na počítači PC (doporučeno)') +
+      opt('mobile', 'Mobilní', 'vždy mobilní zobrazení') +
+      opt('pc', 'Počítač', 'vždy zobrazení pro počítač');
+  }
+  window.addEventListener('resize', function() { var before = layoutForced_; applyLayoutMode_(); if (before !== layoutForced_ && DATA) render(); });
+  try { applyLayoutMode_(); } catch (e) {}
   function onTopSearch_(v) {
     state.q = v;
     syncTopSearchState_();
@@ -3812,7 +3876,9 @@
   }
   function renderSettingsView() {
     if (!DATA || DATA.role !== 'admin') {
-      return '<div class="header"><h1>Nastavení</h1></div><div class="loading">Nastavení jsou dostupná pouze pro správce účtu.</div>';
+      return '<div class="header"><h1>Nastavení</h1></div>' +
+        '<div class="settings-page"><div class="info-box" style="max-width:560px;"><span class="box-title">Zobrazení</span>' + layoutModeBoxHtml_() + '</div>' +
+        '<div class="loading">Ostatní nastavení jsou dostupná pouze pro správce účtu.</div></div>';
     }
     var catRows = renderCategoryEditorRows_();
 
@@ -3913,6 +3979,7 @@
               settingsBox_('fotky', iconCamera, 'Fotky hráčů', fotkyBody, true) +
               settingsBox_('email', iconMail, 'Šablona uvítacího e-mailu', emailBody, true) +
               settingsBox_('sezona', iconList, 'Přechod na novou sezónu', seasonBodyHtml_(), true) +
+              settingsBox_('zobrazeni', iconList, 'Zobrazení (mobil / počítač)', layoutModeBoxHtml_(), true) +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -5618,7 +5685,7 @@
       }
     }
     var slotEl = main.querySelector('.header-tools-slot');
-    if (toolsEl && slotEl && window.matchMedia && window.matchMedia('(min-width: 761px)').matches) slotEl.appendChild(toolsEl);
+    if (toolsEl && slotEl && isPcLayout_()) slotEl.appendChild(toolsEl);
     var catListEl = document.getElementById('catList');
     if (catListEl) catListEl.style.display = (state.view === 'settings') ? 'none' : '';
     var selectModeBtnEl = document.getElementById('selectModeBtn');
