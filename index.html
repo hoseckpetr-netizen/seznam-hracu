@@ -368,9 +368,9 @@
        hráči / Vyřazení hráči) can share the same look. Hidden by default (mobile/
        tablet keep the card list, .player-table-wrap only becomes visible ≥761px). */
     .player-table-wrap { display: none; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
-    .player-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .player-table th { position: sticky; top: 0; background: var(--card); text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
-    .player-table td { padding: 7px 12px; border-bottom: 1px solid #20242a; vertical-align: middle; white-space: nowrap; }
+    .player-table { width: auto; border-collapse: collapse; font-size: 13px; }
+    .player-table th { position: sticky; top: 0; background: var(--card); text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: 10px 7px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
+    .player-table td { padding: 7px 7px; border-bottom: 1px solid #20242a; vertical-align: middle; white-space: nowrap; }
     .player-table tbody tr { cursor: pointer; transition: background .12s ease; }
     .player-table tbody tr:hover { background: rgba(0,255,255,0.05); }
     .player-table tbody tr:last-child td { border-bottom: none; }
@@ -379,7 +379,12 @@
     .player-table .pt-name { font-weight: 600; }
     .player-table .pt-num { font-variant-numeric: tabular-nums; color: var(--muted); }
     .player-table .pt-sub { color: var(--muted); }
-    .player-table .chip { font-size: 11px; }
+    .player-table .chip { font-size: 12.5px; }
+    .player-table .pt-copy { display: inline-flex; align-items: center; gap: 2px; }
+    .player-table .pt-copy .copy-btn { opacity: .55; }
+    .player-table tr:hover .pt-copy .copy-btn { opacity: 1; }
+    .player-table a.pt-addr { color: inherit; text-decoration: none; }
+    .player-table a.pt-addr:hover { color: var(--accent); text-decoration: underline; }
     .player-table .pt-progress { display: flex; align-items: center; gap: 8px; }
     .player-table .pt-progress-bar { width: 56px; height: 5px; border-radius: 999px; background: var(--border); overflow: hidden; flex-shrink: 0; }
     .player-table .pt-progress-fill { height: 100%; border-radius: 999px; }
@@ -467,7 +472,7 @@
       /* The table is its own scroll box sized to the window, so its horizontal scrollbar
          sits at the bottom of the screen (not below all 150+ rows) and the column headers
          stay pinned at the top while scrolling down — like a spreadsheet. */
-      .player-table-wrap { display: block; overflow: auto; max-height: calc(100vh - 150px); min-height: 320px; }
+      .player-table-wrap { display: block; width: fit-content; max-width: 100%; overflow: auto; max-height: calc(100vh - 150px); min-height: 320px; }
       .player-table th { z-index: 2; }
       .player-table th.pt-name-th { position: sticky; left: 0; z-index: 3; }
 
@@ -606,7 +611,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – poznámky u hráčů';
+  var APP_VERSION = '1. 10. 2026 – hustší tabulka, kopírování ID, adresa do Map';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -4611,9 +4616,9 @@
         '<td class="pt-name">' + esc(p.jmenoCele) + '</td>' +
         '<td><span class="chip"><span class="dot" style="background:' + esc(p.categoryColor) + '"></span>' + esc(displayCategoryLabel(p.categoryGroup)) + '</span></td>' +
         '<td class="pt-num">' + esc(p.datumNarozeni) + (p.vek ? ' <span class="pt-sub">(' + esc(p.vek) + ' let)</span>' : '') + '</td>' +
-        '<td class="pt-num">' + esc(p.id || '—') + '</td>' +
+        '<td class="pt-num">' + (p.id ? '<span class="pt-copy">' + esc(p.id) + copyBtnHtml(String(p.id)) + '</span>' : '—') + '</td>' +
         '<td class="pt-num">' + esc(formatRodneCislo_(p.rodneCislo) || '—') + '</td>' +
-        '<td>' + esc(addressLine_(p) || '—') + '</td>' +
+        '<td>' + (addressLine_(p) ? '<a class="pt-addr" href="https://www.google.com/maps/search/?api=1&query=' + esc(encodeURIComponent(addressLine_(p) + ', Česká republika')) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Otevřít v Google Mapách">' + esc(addressLine_(p)) + '</a>' : '—') + '</td>' +
         '<td class="pt-note"' + (p.poznamka ? ' title="' + esc(p.poznamka) + '"' : '') + '>' + esc(p.poznamka || '—') + '</td>' +
         '<td>' + esc(p.zastupceJmeno || '—') + '</td>' +
         '<td class="pt-num">' + esc(p.zastupceTelefon || '—') + '</td>' +
