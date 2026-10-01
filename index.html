@@ -395,6 +395,31 @@
     .player-table thead th { vertical-align: bottom; }
     .player-table th.pt-ck-th { padding: 8px 0 10px; width: 24px; min-width: 24px; text-align: center; }
     .player-table th.pt-ck-th span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; font-size: 10px; letter-spacing: .04em; line-height: 1; }
+    .ck-filter-banner { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); background: rgba(0,255,255,0.06); border: 1px solid rgba(0,255,255,0.25); border-radius: 999px; padding: 5px 6px 5px 14px; margin-bottom: 12px; }
+    .ck-filter-banner b { color: var(--text); }
+    .ck-filter-banner button { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 999px; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+    .ck-filter-banner button:hover { color: var(--accent); border-color: var(--accent); }
+    .prehled-summary { max-width: 980px; box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 14px; margin-bottom: 12px; cursor: pointer; }
+    .prehled-summary:hover { border-color: var(--accent); }
+    .prehled-list { display: flex; flex-direction: column; gap: 8px; max-width: 980px; }
+    .prehled-row { box-sizing: border-box; }
+    .prehled-row { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+    .prehled-row:hover { border-color: var(--accent); background: rgba(0,255,255,0.04); }
+    .prehled-row.done { cursor: default; opacity: .55; padding: 8px 16px; }
+    .prehled-row.done:hover { border-color: var(--border); background: var(--card); }
+    .prehled-count { font-size: 24px; font-weight: 700; min-width: 44px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+    .prehled-count.ok { font-size: 16px; color: var(--green); }
+    .prehled-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+    .prehled-label { font-size: 13px; color: var(--muted); }
+    .prehled-label b { color: var(--text); font-size: 14px; }
+    .prehled-sub { font-size: 12px; color: var(--muted); }
+    .prehled-bar { height: 5px; border-radius: 999px; background: var(--border); overflow: hidden; }
+    .prehled-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+    .prehled-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+    .prehled-cat { background: #12151a; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; color: var(--text); cursor: pointer; font-family: inherit; }
+    .prehled-cat:hover { border-color: var(--accent); }
+    .prehled-pct { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    @media (max-width: 760px) { .prehled-row { gap: 10px; padding: 10px 12px; } .prehled-count { font-size: 20px; min-width: 32px; } .prehled-pct { display: none; } }
     .player-table th.pt-sortable { cursor: pointer; user-select: none; }
     .player-table th.pt-sortable:hover, .player-table th.sorted { color: var(--accent); }
     .player-table .pt-sort-arrow { margin-left: 4px; font-size: 9px; opacity: 0; }
@@ -545,6 +570,9 @@
           <button class="icon-btn top-search-legacy" type="button" onclick="focusSearch()" aria-label="Hledat" title="Hledat hráče">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
+          <button class="icon-btn" type="button" onclick="openPrehled()" aria-label="Co zbývá udělat" title="Co zbývá udělat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          </button>
           <button class="icon-btn" type="button" onclick="openMap()" aria-label="Mapa hráčů" title="Mapa hráčů">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
           </button>
@@ -616,7 +644,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – export do Excelu (Sdílet)';
+  var APP_VERSION = '1. 10. 2026 – přehled Co zbývá udělat';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2135,7 +2163,7 @@
   var goingHome = false;
   function pushSubView() {
     navDepth++;
-    navStack.push({ view: renderedView, selectedRow: renderedRow, scrollY: window.scrollY || document.documentElement.scrollTop || 0 });
+    navStack.push({ view: renderedView, selectedRow: renderedRow, scrollY: window.scrollY || document.documentElement.scrollTop || 0, categories: state.categories.slice() });
     try { history.pushState({ fksNavDepth: navDepth }, ''); } catch (e) {}
   }
   window.addEventListener('popstate', function() {
@@ -2151,6 +2179,8 @@
     if (view === 'detail' && !(DATA && DATA.players && DATA.players.some(function(x) { return x.sheetRow === target.selectedRow; }))) view = 'list';
     state.view = view;
     state.selectedRow = view === 'detail' ? target.selectedRow : null;
+    // Back to "Co zbývá udělat" after clicking a category in it: restore its category selection.
+    if (view === 'prehled' && target.categories) { state.categories = target.categories; renderCatList(); }
     render();
     if (target.scrollY) window.scrollTo(0, target.scrollY);
   });
@@ -2991,6 +3021,82 @@
     return '<div class="header"><h1>Mapa hráčů</h1><div class="count" id="mapStatus">Načítám mapu…</div></div>' +
       '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Zobrazuje se aktuální filtr (' + (state.categories.length ? state.categories.map(displayCategoryLabel).join(', ') : 'všechny kategorie') + '). Polohy jsou přibližné odhady podle adresy, zdroj: Google Maps.</div>' +
       '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
+  }
+
+  // ---------- Přehled „Co zbývá udělat“ ----------
+  // One row per active checklist step: how many players still miss it, a progress bar and a
+  // per-category breakdown. Respects the category chips in the sidebar (like the map). Clicking
+  // a row opens the player list filtered to "<step> = nesplněno"; clicking a category chip in a
+  // row narrows it to that category too. Back returns here.
+  function openPrehled() {
+    state.view = 'prehled';
+    pushSubView();
+    render();
+  }
+  function prehledPlayers_() {
+    return DATA.players.filter(function(p) { return !state.categories.length || state.categories.indexOf(p.categoryGroup) !== -1; });
+  }
+  function openPrehledFilter_(key, cat) {
+    pushSubView(); // before changing the filters, so back restores the overview as it was
+    state.checklistKey = key;
+    state.checklistStatus = 'nesplneno';
+    state.missingAnyStep = false;
+    state.noPhoto = false;
+    state.q = '';
+    state.rok = 'Vše';
+    state.city = 'Vše';
+    if (cat) state.categories = [cat];
+    state.view = 'list';
+    renderCatList();
+    render();
+  }
+  function openPrehledAllMissing_() {
+    pushSubView(); // before changing the filters, so back restores the overview as it was
+    state.checklistKey = '';
+    state.missingAnyStep = true;
+    state.noPhoto = false;
+    state.q = '';
+    state.rok = 'Vše';
+    state.city = 'Vše';
+    state.view = 'list';
+    render();
+  }
+  function renderPrehledView() {
+    var players = prehledPlayers_();
+    var keys = CHECKLIST_KEYS.filter(function(k) { return loadDisabledChecklistKeys_().indexOf(k) === -1; });
+    var allDone = players.filter(function(p) { var c = checklistCounts(p); return c.total && c.done === c.total; }).length;
+    var rows = keys.map(function(k) {
+      var missing = players.filter(function(p) { return !p.checklist[k]; });
+      var byCat = {};
+      missing.forEach(function(p) { var g = p.categoryGroup || 'Nezařazeno'; (byCat[g] = byCat[g] || { n: 0, color: p.categoryColor }).n++; });
+      var cats = Object.keys(byCat).sort(function(a, b) { return categoryOrderWeight_(a) - categoryOrderWeight_(b) || a.localeCompare(b, 'cs'); });
+      return { key: k, missing: missing.length, cats: cats, byCat: byCat };
+    }).sort(function(a, b) { return (b.missing > 0) - (a.missing > 0) || keys.indexOf(a.key) - keys.indexOf(b.key); });
+    var total = players.length;
+    var rowsHtml = rows.map(function(r) {
+      var done = total - r.missing, pct = total ? Math.round(done / total * 100) : 0;
+      var label = CHECKLIST_LABELS[r.key] || r.key;
+      if (!r.missing) {
+        return '<div class="prehled-row done"><span class="prehled-count ok">&#10003;</span><span class="prehled-label">' + esc(label) + '</span><span class="prehled-sub">hotovo u všech</span></div>';
+      }
+      return '<div class="prehled-row" role="button" tabindex="0" onclick="openPrehledFilter_(\'' + jsStr(r.key) + '\')" title="Zobrazit hráče, kterým chybí „' + esc(label) + '“">' +
+        '<span class="prehled-count">' + r.missing + '</span>' +
+        '<span class="prehled-main">' +
+          '<span class="prehled-label">' + (r.missing === 1 ? 'hráč' : r.missing < 5 ? 'hráči' : 'hráčů') + ' bez: <b>' + esc(label) + '</b></span>' +
+          '<span class="prehled-bar"><span style="width:' + pct + '%"></span></span>' +
+          '<span class="prehled-cats">' + r.cats.map(function(c) {
+            return '<button type="button" class="chip prehled-cat" onclick="event.stopPropagation(); openPrehledFilter_(\'' + jsStr(r.key) + '\', \'' + jsStr(c) + '\')" title="Jen ' + esc(displayCategoryLabel(c)) + '"><span class="dot" style="background:' + esc(r.byCat[c].color || '#888') + '"></span>' + esc(displayCategoryLabel(c)) + ' ' + r.byCat[c].n + '</button>';
+          }).join('') + '</span>' +
+        '</span>' +
+        '<span class="prehled-pct">' + done + '/' + total + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="header"><h1>Co zbývá udělat</h1><div class="count">' + total + ' hráčů · ' + (state.categories.length ? state.categories.map(displayCategoryLabel).join(', ') : 'všechny kategorie') + '</div></div>' +
+      '<div class="prehled-summary" role="button" tabindex="0" onclick="openPrehledAllMissing_()" title="Zobrazit hráče, kterým něco chybí">' +
+        '<b>' + allDone + '</b> z ' + total + ' hráčů má vše hotovo' + (total - allDone ? ' · <span style="color:var(--accent);">' + (total - allDone) + ' hráčům ještě něco chybí &rsaquo;</span>' : '') +
+      '</div>' +
+      '<div class="prehled-list">' + rowsHtml + '</div>' +
+      '<div style="font-size:11px;color:#5a6169;margin-top:10px;">Kliknutím na řádek zobrazíte hráče, kterým daný krok chybí; kliknutím na kategorii jen hráče z ní. Výběr kategorií vlevo zúží celý přehled.</div>';
   }
 
   // ---------- Nastavení (přehled kategorií/checklistu, import nových hráčů z KIS) ----------
@@ -4924,7 +5030,10 @@
        })) :
       '<div class="loading">Žádní hráči neodpovídají filtru.</div>';
 
+    var ckFilterTxt = state.checklistKey ? ((state.checklistStatus === 'splneno' ? 'splněno: ' : 'chybí: ') + (CHECKLIST_LABELS[state.checklistKey] || state.checklistKey)) : (state.missingAnyStep ? 'hráči, kterým něco chybí' : '');
     return '<div class="header"><h1>Aktivní hráči</h1><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
+      (ckFilterTxt ? '<div class="ck-filter-banner">Filtr: <b>' + esc(ckFilterTxt) + '</b>' + (state.categories.length ? ' · ' + esc(state.categories.map(displayCategoryLabel).join(', ')) : '') +
+        '<button type="button" onclick="state.checklistKey=\'\';state.missingAnyStep=false;renderFilterPanel();render();">&#10005; zrušit</button></div>' : '') +
       toolbar +
       listHtml;
   }
@@ -5064,6 +5173,7 @@
       }
     }
     else if (state.view === 'map') { main.innerHTML = renderMapView(); }
+    else if (state.view === 'prehled') { main.innerHTML = renderPrehledView(); }
     else if (state.view === 'settings') { main.innerHTML = renderSettingsView(); wireSettingsView(); }
     else if (state.view === 'vyrazeni') { main.innerHTML = renderVyrazeniView(); }
     else { main.innerHTML = renderListView(); }
