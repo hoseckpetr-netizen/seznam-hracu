@@ -326,7 +326,10 @@
       .brand { width: 100%; }
       .brand .name { display: none; }
       .brand .top-search { flex: 1; height: 36px; }
-      .brand .top-search input[type=search] { font-size: 16px; } /* ≥16px so iOS doesn't zoom in on focus */
+      .brand .top-search { gap: 6px; padding: 0 6px 0 9px; }
+      .brand .top-search > svg { width: 14px; height: 14px; }
+      .brand .top-search input[type=search] { font-size: 13px; }
+      .brand .top-search input::placeholder { font-size: 12px; }
       .brand .top-search .top-search-kbd { display: none; }
       .brand .icons { display: flex; gap: 8px; margin-left: auto; }
       .sidebar .season { display: none; }
@@ -644,7 +647,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – přehled Co zbývá udělat';
+  var APP_VERSION = '1. 10. 2026 – menší písmo vyhledávání na mobilu';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -1957,6 +1960,18 @@
     var el = document.getElementById('topSearch');
     if (el && el.offsetParent !== null) { e.preventDefault(); el.focus(); el.select(); }
   });
+  // Shorter search hint on a phone, where the full one gets cut off.
+  (function() {
+    try {
+      var mq = window.matchMedia('(max-width: 760px)');
+      var apply = function() {
+        var el = document.getElementById('topSearch');
+        if (el) el.placeholder = mq.matches ? 'Hledat hráče…' : 'Hledat jméno, telefon, e-mail, ID…';
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); else apply();
+      if (mq.addEventListener) mq.addEventListener('change', apply); else if (mq.addListener) mq.addListener(apply);
+    } catch (e) {}
+  })();
   function onTopSearch_(v) {
     state.q = v;
     syncTopSearchState_();
