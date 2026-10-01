@@ -611,7 +611,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – telefon z editace do Google kontaktů';
+  var APP_VERSION = '1. 10. 2026 – změna telefonu nahradí staré číslo v kontaktu';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2587,11 +2587,12 @@
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     }).then(function() {
-      Object.keys(changes).forEach(function(key) { p[key] = changes[key]; });
+      var old = {};
+      Object.keys(changes).forEach(function(key) { old[key] = p[key]; p[key] = changes[key]; });
       pushNotification('Uloženy změny u hráče ' + p.jmenoCele + '.', 'info');
       closeModal();
       render();
-      syncEditedPhonesToContacts_(p, changes);
+      syncEditedPhonesToContacts_(p, changes, old);
     }).catch(function(err) {
       area.innerHTML = '<div class="diff-summary" style="color:var(--red);">Uložení selhalo: ' + esc(err.message) + '</div>' +
         '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
@@ -4055,36 +4056,48 @@
     });
   }
   // Puts a phone number into Google Contacts after it was added/changed in Editovat:
-  //  - some contact already carries that number → nothing to do;
-  //  - a contact with this name exists → the number is added to it (+ label, + Společnost);
+  //  - a contact with this name exists → the new number is added to it and the OLD number
+  //    (the one it replaced in the sheet) is removed from it (+ label, + Společnost);
+  //  - no such contact, but some other contact already carries the number → nothing to do;
   //  - otherwise a new contact is created in the given label.
-  function upsertPhoneContact_(name, phoneRaw, org, groupName) {
+  function upsertPhoneContact_(name, phoneRaw, oldPhoneRaw, org, groupName) {
     name = String(name || '').replace(/\s+/g, ' ').trim();
     var digits = normalizePhoneSheet_(phoneRaw);
+    var oldDigits = normalizePhoneSheet_(oldPhoneRaw);
+    if (oldDigits === digits) oldDigits = '';
     var phone = formatPhoneForContact_(digits);
+    var last9 = function(v) { return normalizePhoneSheet_(v).slice(-9); };
     return ensureContactGroup_(groupName).then(function(gid) {
       return searchContactsAny_([name, digits.slice(-9)]).then(function(people) {
-        var holder = people.find(function(pp) { return personHasPhoneOrMail_(pp, digits, ''); });
-        if (holder) {
-          var hn = (holder.names && holder.names[0] && holder.names[0].displayName) || name;
-          return 'telefon ' + phone + ' už je u kontaktu „' + hn + '“';
-        }
         var byName = people.find(function(pp) { return personNames_(pp).indexOf(contactNorm_(name)) !== -1; });
         if (!byName) {
+          var holder = people.find(function(pp) { return personHasPhoneOrMail_(pp, digits, ''); });
+          if (holder) {
+            var hn = (holder.names && holder.names[0] && holder.names[0].displayName) || name;
+            return 'telefon ' + phone + ' už je u kontaktu „' + hn + '“';
+          }
           return createContact_(name, '', phone, gid, org, groupName).then(function() {
             return 'vytvořen nový kontakt „' + name + '“ s telefonem ' + phone + ' (štítek ' + groupName + ')';
           });
         }
-        var body = { phoneNumbers: (byName.phoneNumbers || []).map(function(n) { return { value: n.value, type: n.type }; }).concat([{ value: phone }]) };
-        var fields = ['phoneNumbers'];
+        var existing = byName.phoneNumbers || [];
+        var hadNew = existing.some(function(n) { return last9(n.value) === digits.slice(-9); });
+        var removed = oldDigits ? existing.filter(function(n) { return last9(n.value) === oldDigits.slice(-9); }) : [];
+        var kept = existing.filter(function(n) { return removed.indexOf(n) === -1; }).map(function(n) { return { value: n.value, type: n.type }; });
+        if (!hadNew) kept.push({ value: phone });
+        var fields = [], body = {};
+        if (!hadNew || removed.length) { fields.push('phoneNumbers'); body.phoneNumbers = kept; }
         if (org && !(byName.organizations || []).some(function(o) { return contactNorm_(o.name) === contactNorm_(org); })) {
           fields.push('organizations'); body.organizations = [{ name: org }];
         }
         var inGroup = (byName.memberships || []).some(function(m) { return m.contactGroupMembership && m.contactGroupMembership.contactGroupResourceName === gid; });
-        return updateContact_(byName, fields.join(','), body).then(function() {
+        var step = fields.length ? updateContact_(byName, fields.join(','), body) : Promise.resolve();
+        return step.then(function() {
           if (!inGroup) return modifyGroup_(gid, byName.resourceName, null);
         }).then(function() {
-          return 'telefon ' + phone + ' přidán ke kontaktu „' + name + '“';
+          var oldTxt = removed.length ? ', staré číslo ' + formatPhoneForContact_(oldDigits) + ' odstraněno' : '';
+          if (hadNew) return 'telefon ' + phone + ' už u kontaktu „' + name + '“ byl' + oldTxt;
+          return 'telefon ' + phone + ' uložen ke kontaktu „' + name + '“' + oldTxt;
         });
       });
     });
@@ -4094,21 +4107,22 @@
   // into "FK Slovany - Hráči", a guardian's number into "FK Slovany - Rodiče" with the player
   // as Společnost. Strictly sequential (People API rejects concurrent writes). Each outcome
   // is shown as a toast + bell notification.
-  function syncEditedPhonesToContacts_(p, changes) {
+  function syncEditedPhonesToContacts_(p, changes, old) {
+    old = old || {};
     var jobs = [];
     var gDigits = normalizePhoneSheet_(p.zastupceTelefon), g2Digits = normalizePhoneSheet_(p.zastupce2Telefon);
     if (changes.telefonHrac) {
       var own = normalizePhoneSheet_(changes.telefonHrac);
-      if (own && own !== gDigits && own !== g2Digits) jobs.push({ who: 'hráč', name: p.jmenoCele, phone: own, org: '', group: CONTACT_GROUP_NAMES.hraci });
+      if (own && own !== gDigits && own !== g2Digits) jobs.push({ who: 'hráč', name: p.jmenoCele, phone: own, oldPhone: old.telefonHrac, org: '', group: CONTACT_GROUP_NAMES.hraci });
       else if (own) pushNotification('Google kontakty (' + p.jmenoCele + '): telefon hráče je stejný jako telefon zástupce — samostatný kontakt hráče se nevytváří.', 'info');
     }
-    if (changes.zastupceTelefon && gDigits) jobs.push({ who: 'zástupce', name: p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), phone: gDigits, org: p.jmenoCele, group: CONTACT_GROUP_NAMES.rodice });
-    if (changes.zastupce2Telefon && g2Digits) jobs.push({ who: '2. zástupce', name: p.zastupce2Jmeno || (p.jmenoCele + ' - 2. zástupce'), phone: g2Digits, org: p.jmenoCele, group: CONTACT_GROUP_NAMES.rodice });
+    if (changes.zastupceTelefon && gDigits) jobs.push({ who: 'zástupce', name: p.zastupceJmeno || (p.jmenoCele + ' - zástupce'), phone: gDigits, oldPhone: old.zastupceTelefon, org: p.jmenoCele, group: CONTACT_GROUP_NAMES.rodice });
+    if (changes.zastupce2Telefon && g2Digits) jobs.push({ who: '2. zástupce', name: p.zastupce2Jmeno || (p.jmenoCele + ' - 2. zástupce'), phone: g2Digits, oldPhone: old.zastupce2Telefon, org: p.jmenoCele, group: CONTACT_GROUP_NAMES.rodice });
     if (!jobs.length) return Promise.resolve();
     showToast_('Ukládám telefon do Google kontaktů…', 'info');
     return jobs.reduce(function(chain, j) {
       return chain.then(function() {
-        return upsertPhoneContact_(j.name, j.phone, j.org, j.group).then(function(msg) {
+        return upsertPhoneContact_(j.name, j.phone, j.oldPhone, j.org, j.group).then(function(msg) {
           pushNotification('Google kontakty (' + j.who + '): ' + msg + '.', 'info');
         }, function(err) {
           pushNotification('Google kontakty (' + j.who + ' ' + j.name + '): uložení telefonu selhalo — ' + err.message, 'error');
