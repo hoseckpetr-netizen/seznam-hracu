@@ -246,7 +246,8 @@
     .modal-box h2 { font-size: 16px; margin: 0 0 14px; }
     .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
     .form-row label { font-size: 11px; color: var(--muted); }
-    .form-row input, .form-row select { background: #12151a; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+    .form-row textarea { resize: vertical; min-height: 64px; }
+    .form-row input, .form-row select, .form-row textarea { background: #12151a; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
     .modal-actions button { width: auto; padding: 9px 16px; font-size: 13px; font-family: inherit; }
     .share-fields-grid { display: flex; flex-direction: column; gap: 2px; }
@@ -389,6 +390,10 @@
     .player-table thead th { vertical-align: bottom; }
     .player-table th.pt-ck-th { padding: 8px 0 10px; width: 24px; min-width: 24px; text-align: center; }
     .player-table th.pt-ck-th span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; font-size: 10px; letter-spacing: .04em; line-height: 1; }
+    .player-table td.pt-note { max-width: 280px; min-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+    .detail-note { margin-bottom: 22px; flex-direction: row; align-items: baseline; gap: 14px; min-width: 0; }
+    .detail-note .box-title { flex-shrink: 0; }
+    .detail-note-text { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .player-table td.pt-ck { padding: 7px 3px; text-align: center; width: 24px; }
     .player-table .pt-ck-first { border-left: 1px solid var(--border); padding-left: 8px; }
     .player-table .ck { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid #3a4048; vertical-align: middle; }
@@ -601,7 +606,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – kategorie u nových uživatelů a importu';
+  var APP_VERSION = '1. 10. 2026 – poznámky u hráčů';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -909,6 +914,15 @@
     return map;
   }
 
+  // "Poznámka" column of Seznam / Vyřazené — matched case-insensitively (also "Poznámky").
+  // It may not exist yet: the app adds it on the first saved note (ensureNoteColumn_).
+  function findNoteCol_(header) {
+    for (var i = 0; i < (header || []).length; i++) {
+      var h = String(header[i] || '').trim().toLowerCase();
+      if (h === 'poznámka' || h === 'poznámky') return i;
+    }
+    return -1;
+  }
   function col_(map, name, occurrence) {
     occurrence = occurrence || 0;
     return (map[name] && map[name].length > occurrence) ? map[name][occurrence] : -1;
@@ -1397,6 +1411,7 @@
       psc: col_(map, 'PSČ'),
       emailHrac: col_(map, 'E-mail', 0),
       telefonHrac: col_(map, 'Telefon', 0),
+      poznamka: findNoteCol_(header),
       id: col_(map, 'ID'),
       zastupceJmeno: zastupceJmenoIdx,
       zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
@@ -1453,6 +1468,7 @@
         psc: val_(row, idx.psc),
         emailHrac: val_(row, idx.emailHrac),
         telefonHrac: val_(row, idx.telefonHrac),
+        poznamka: String(val_(row, idx.poznamka)).trim(),
         id: val_(row, idx.id),
         zastupceJmeno: val_(row, idx.zastupceJmeno),
         zastupceTelefon: val_(row, idx.zastupceTelefon),
@@ -1506,6 +1522,7 @@
       psc: col_(map, 'PSČ'),
       emailHrac: col_(map, 'E-mail', 0),
       telefonHrac: col_(map, 'Telefon', 0),
+      poznamka: findNoteCol_(header),
       id: col_(map, 'ID'),
       zastupceJmeno: zastupceJmenoIdx,
       zastupceTelefon: zastupceJmenoIdx >= 0 ? zastupceJmenoIdx + 1 : -1,
@@ -1547,6 +1564,7 @@
         psc: val_(row, idx.psc),
         emailHrac: val_(row, idx.emailHrac),
         telefonHrac: val_(row, idx.telefonHrac),
+        poznamka: String(val_(row, idx.poznamka)).trim(),
         id: val_(row, idx.id),
         zastupceJmeno: val_(row, idx.zastupceJmeno),
         zastupceTelefon: val_(row, idx.zastupceTelefon),
@@ -2405,8 +2423,8 @@
   }
 
   // ---------- Editace údajů hráče (zapisuje vybrané změněné buňky zpět do Sheetu) ----------
-  var EDIT_FIELDS = ['id', 'rodneCislo', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc'];
-  var EDIT_FIELD_LABELS = { id: 'FAČR ID', rodneCislo: 'Rodné číslo', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ' };
+  var EDIT_FIELDS = ['id', 'rodneCislo', 'telefonHrac', 'emailHrac', 'zastupceJmeno', 'zastupceTelefon', 'zastupceEmail', 'zastupce2Jmeno', 'zastupce2Telefon', 'zastupce2Email', 'ulice', 'cp', 'mesto', 'psc', 'poznamka'];
+  var EDIT_FIELD_LABELS = { id: 'FAČR ID', rodneCislo: 'Rodné číslo', telefonHrac: 'Telefon hráče', emailHrac: 'E-mail hráče', zastupceJmeno: 'Zástupce – jméno', zastupceTelefon: 'Zástupce – telefon', zastupceEmail: 'Zástupce – e-mail', zastupce2Jmeno: '2. zástupce – jméno', zastupce2Telefon: '2. zástupce – telefon', zastupce2Email: '2. zástupce – e-mail', ulice: 'Ulice', cp: 'Číslo popisné', mesto: 'Obec', psc: 'PSČ', poznamka: 'Poznámka' };
 
   function openEditModal(sheetRow) {
     if (!DATA || DATA.role !== 'admin') return;
@@ -2438,6 +2456,7 @@
       field('cp', EDIT_FIELD_LABELS.cp, p.cp) +
       field('mesto', EDIT_FIELD_LABELS.mesto, p.mesto) +
       field('psc', EDIT_FIELD_LABELS.psc, p.psc) +
+      '<div class="form-row"><label for="ef_poznamka">' + esc(EDIT_FIELD_LABELS.poznamka) + '</label><textarea id="ef_poznamka" rows="3">' + esc(p.poznamka || '') + '</textarea></div>' +
       '<div id="editDiffArea"></div>' +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
@@ -2472,26 +2491,63 @@
       '</div>';
     document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
   }
+  // Adds a "Poznámka" column at the very end of "Seznam" (a brand-new grid column, so no
+  // existing data can be overwritten) and writes its header into the header row.
+  function ensureNoteColumn_() {
+    if (DATA.colIndex.poznamka >= 0) return Promise.resolve(DATA.colIndex.poznamka);
+    var api = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID;
+    function ok(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }
+    var sheetId, newCol;
+    return fetch(api + '?fields=' + encodeURIComponent('sheets.properties(sheetId,title,gridProperties.columnCount)'), {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    }).then(ok).then(function(json) {
+      var sh = (json.sheets || []).find(function(x) { return x.properties.title === 'Seznam'; });
+      if (!sh) throw new Error('List "Seznam" v tabulce nebyl nalezen.');
+      sheetId = sh.properties.sheetId;
+      newCol = sh.properties.gridProperties.columnCount;
+      return fetch(api + ':batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ appendDimension: { sheetId: sheetId, dimension: 'COLUMNS', length: 1 } }] })
+      }).then(ok);
+    }).then(function() {
+      var range = 'Seznam!' + colIndexToLetter(newCol) + (DATA.headerRowIdx + 1);
+      return fetch(api + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [['Poznámka']] })
+      }).then(ok);
+    }).then(function() {
+      DATA.colIndex.poznamka = newCol;
+      pushNotification('Do listu "Seznam" byl přidán nový sloupec "Poznámka" (sloupec ' + colIndexToLetter(newCol) + ').', 'info');
+      return newCol;
+    });
+  }
   function saveEditsToSheet(sheetRow, changes) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     var area = document.getElementById('editDiffArea');
     if (!p || !DATA.colIndex) { area.innerHTML = '<div class="diff-summary">Chyba: chybí informace o sloupcích.</div>'; return; }
     area.innerHTML = '<div class="diff-summary">Ukládám…</div>';
+    var needNoteCol = ('poznamka' in changes) && !(DATA.colIndex.poznamka >= 0);
+    (needNoteCol ? ensureNoteColumn_() : Promise.resolve()).then(function() {
     var dataArr = [];
     Object.keys(changes).forEach(function(key) {
       var colIdx = DATA.colIndex[key];
       if (colIdx == null || colIdx < 0) return;
-      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[changes[key]]] });
+      // Leading apostrophe keeps a note like "=…" or "1/2" as plain text.
+      var v = (key === 'poznamka' && changes[key]) ? ("'" + changes[key]) : changes[key];
+      dataArr.push({ range: 'Seznam!' + colIndexToLetter(colIdx) + sheetRow, values: [[v]] });
     });
-    if (!dataArr.length) {
-      area.innerHTML = '<div class="diff-summary">Tyto položky appka zatím neumí uložit (sloupec v tabulce nenalezen).</div>';
-      return;
-    }
-    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+    if (!dataArr.length) throw new Error('Tyto položky appka zatím neumí uložit (sloupec v tabulce nenalezen).');
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: dataArr })
+    });
     }).then(function(r) {
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
       return r.json();
@@ -4558,12 +4614,13 @@
         '<td class="pt-num">' + esc(p.id || '—') + '</td>' +
         '<td class="pt-num">' + esc(formatRodneCislo_(p.rodneCislo) || '—') + '</td>' +
         '<td>' + esc(addressLine_(p) || '—') + '</td>' +
-        '<td class="pt-num">' + esc(p.telefonHrac || '—') + '</td>' +
-        '<td>' + esc(p.emailHrac || '—') + '</td>' +
+        '<td class="pt-note"' + (p.poznamka ? ' title="' + esc(p.poznamka) + '"' : '') + '>' + esc(p.poznamka || '—') + '</td>' +
         '<td>' + esc(p.zastupceJmeno || '—') + '</td>' +
         '<td class="pt-num">' + esc(p.zastupceTelefon || '—') + '</td>' +
         '<td>' + esc(p.zastupceEmail || '—') + '</td>' +
         statusCell +
+        '<td class="pt-num">' + esc(p.telefonHrac || '—') + '</td>' +
+        '<td>' + esc(p.emailHrac || '—') + '</td>' +
       '</tr>';
     }).join('');
     var checkboxTh = selectable ? '<th></th>' : '';
@@ -4574,8 +4631,8 @@
       '<th>Vyřazen</th>';
     return '<div class="player-table-wrap"><table class="player-table"><thead><tr>' +
       checkboxTh +
-      '<th></th><th class="pt-name-th">Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Telefon hráče</th><th>E-mail hráče</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
-      statusTh +
+      '<th></th><th class="pt-name-th">Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Poznámka</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
+      statusTh + '<th>Telefon hráče</th><th>E-mail hráče</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -4677,6 +4734,7 @@
           '</div>' +
         '</div>' +
       '</div>' +
+      (p.poznamka ? '<div class="info-box detail-note"><span class="box-title">Poznámka</span><span class="detail-note-text">' + esc(p.poznamka) + '</span></div>' : '') +
       // .detail-col wrappers are display:contents on phone/tablet (layout exactly as before);
       // on a wide PC screen they become two columns: contact boxes | checklist.
       '<div class="detail-grid detail-body">' +
