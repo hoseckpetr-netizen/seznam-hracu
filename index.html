@@ -403,6 +403,20 @@
     .ck-filter-banner b { color: var(--text); }
     .ck-filter-banner button { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 999px; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
     .ck-filter-banner button:hover { color: var(--accent); border-color: var(--accent); }
+    .diff-warn { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.4); color: #FBBF24; font-size: 12.5px; line-height: 1.5; }
+    .diff-warn b { color: #FBBF24; }
+    .prehled-dups { max-width: 980px; box-sizing: border-box; background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.35); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; }
+    .prehled-dups-title { color: #FBBF24; font-weight: 700; margin-bottom: 6px; }
+    .prehled-dup-row { padding: 3px 0; }
+    .prehled-dup-row a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .prehled-dup-kind { color: var(--muted); }
+    .detail-history { margin-top: 16px; }
+    .history-wrap { overflow-x: auto; }
+    .history-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+    .history-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .history-table td { padding: 6px 8px; border-bottom: 1px solid #20242a; vertical-align: top; }
+    .history-table td:first-child { white-space: nowrap; color: var(--muted); }
+    .history-table td.h-old { color: var(--muted); text-decoration: line-through; }
     .prehled-summary { max-width: 980px; box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 14px; margin-bottom: 12px; cursor: pointer; }
     .prehled-summary:hover { border-color: var(--accent); }
     .prehled-list { display: flex; flex-direction: column; gap: 8px; max-width: 980px; }
@@ -648,7 +662,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – adresa hraci.fkslovany.cz';
+  var APP_VERSION = '1. 10. 2026 – kontrola údajů, duplicity, historie změn, nová sezóna';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -1910,13 +1924,15 @@
             categoryRules: rulesWithColor,
             categoryCol: catParsed.catCol,
             cities: Object.keys(cities).sort(),
-            season: 'Seznam hráčů 26/27',
+            season: seasonLabel_(),
+            userEmail: email,
             role: role,
             colIndex: parsed.colIndex,
             headerRowIdx: parsed.headerRowIdx
           };
 
           document.getElementById('season').textContent = DATA.season;
+          try { announceDuplicates_(); } catch (e) {}
           document.getElementById('roleBadge').innerHTML = '<span>' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '</span><button onclick="signOut()" title="' + (role === 'admin' ? 'Přihlášen jako správce' : 'Přihlášen jako náhled') + '">Odhlásit</button>';
           // Fetched separately (not in the main batchGet above) so a missing/not-yet-created
           // "Email" tab can never break the main roster load — it just falls back to a default.
@@ -2379,6 +2395,7 @@
       return deleteSeznamRow_(p.sheetRow);
     }).then(function() {
       pushNotification('Hráč ' + p.jmenoCele + ' byl přesunut do Vyřazených.', 'info');
+      logHistory_(p, 'Přesun do Vyřazených', []);
       state.view = 'list';
       state.selectedRow = null;
       loadData();
@@ -2408,6 +2425,7 @@
     var name = p.jmenoCele;
     deleteSeznamRow_(sheetRow).then(function() {
       pushNotification('Hráč ' + name + ' byl trvale smazán.', 'info');
+      logHistory_(p, 'Trvale smazán', []);
       state.view = 'list';
       state.selectedRow = null;
       loadData();
@@ -2688,13 +2706,15 @@
       area.innerHTML = '<div class="diff-summary">Žádné změny k uložení.</div>';
       return;
     }
+    var warnings = validatePlayerData_(p, changes);
     area.innerHTML = '<div class="diff-summary"><b>Zkontrolujte změny:</b>' +
       keys.map(function(k) {
         return '<div>' + esc(EDIT_FIELD_LABELS[k] || k) + ': "' + esc(p[k] || '—') + '" → "' + esc(changes[k] || '—') + '"</div>';
       }).join('') + '</div>' +
+      (warnings.length ? '<div class="diff-warn"><b>&#9888; Zkontrolujte prosím:</b>' + warnings.map(function(w) { return '<div>• ' + esc(w) + '</div>'; }).join('') + '<div style="margin-top:4px;opacity:.8;">Můžete opravit a dát znovu „Zkontrolovat a uložit“, nebo uložit i tak.</div></div>' : '') +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
-        '<button class="icon-btn toolbar-btn" id="confirmSaveBtn" style="background:var(--accent);color:#06181a;border-color:var(--accent);">Potvrdit a uložit</button>' +
+        '<button class="icon-btn toolbar-btn" id="confirmSaveBtn" style="background:' + (warnings.length ? '#FBBF24;color:#1a1300;border-color:#FBBF24' : 'var(--accent);color:#06181a;border-color:var(--accent)') + ';">' + (warnings.length ? 'Uložit i tak' : 'Potvrdit a uložit') + '</button>' +
       '</div>';
     document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
   }
@@ -2765,6 +2785,7 @@
     }).then(function() {
       var old = {};
       Object.keys(changes).forEach(function(key) { old[key] = p[key]; p[key] = changes[key]; });
+      logHistory_(p, 'Úprava údajů', Object.keys(changes).map(function(k) { return { field: EDIT_FIELD_LABELS[k] || k, old: old[k], new: changes[k] }; }));
       pushNotification('Uloženy změny u hráče ' + p.jmenoCele + '.', 'info');
       closeModal();
       render();
@@ -2824,6 +2845,7 @@
     }).then(function() {
       p.checklist[key] = newVal;
       if (newDate != null && p.checklistDates) p.checklistDates[key] = newDate;
+      logHistory_(p, 'Checklist', [{ field: CHECKLIST_LABELS[key] || key, old: newVal ? 'NE' : 'ANO', new: newVal ? 'ANO' : 'NE' }]);
       render();
       if (key === 'FOTO PC' && newVal === true) importPlayerPhoto(p);
     }).catch(function(err) {
@@ -3039,6 +3061,324 @@
       '<div id="mapContainer" style="height:calc(100vh - 190px); min-height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>';
   }
 
+  // ---------- Kontrola údajů při editaci ----------
+  // Warnings only (the admin can still save) — a phone that isn't 9 digits, a malformed
+  // e-mail, a rodné číslo with a wrong checksum or a date that doesn't match "Datum narození",
+  // a PSČ that isn't 5 digits, an odd FAČR ID, or a rodné číslo another player already has.
+  var EMAIL_RE_ = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  function cisliceWord_(n) { return n === 1 ? 'číslici' : (n >= 2 && n <= 4) ? 'číslice' : 'číslic'; }
+  function phoneProblem_(v) {
+    var raw = String(v || '').trim();
+    if (!raw) return '';
+    var d = normalizeDigits_(raw);
+    if (/^\+/.test(raw) || /^00/.test(raw)) {
+      if (/^(\+|00)42[01]/.test(raw.replace(/\s/g, ''))) return d.replace(/^(00)?42[01]/, '').length === 9 ? '' : 'české/slovenské číslo má mít 9 číslic za předvolbou';
+      return d.length >= 8 && d.length <= 15 ? '' : 'neobvyklá délka zahraničního čísla';
+    }
+    if (/[^\d\s+\-\/()]/.test(raw)) return 'obsahuje písmena nebo nepovolené znaky';
+    return d.length === 9 ? '' : 'má ' + d.length + ' ' + cisliceWord_(d.length) + ' místo 9';
+  }
+  // Rodné číslo: 9 digits (born before 1954) or 10 digits with mod-11 checksum; months +50
+  // (women) and +20/+70 (extra numbers since 2004). Returns { problem, date: Date|null }.
+  function rodneCisloCheck_(v) {
+    var d = normalizeDigits_(v);
+    if (!d) return { problem: '', date: null };
+    if (d.length !== 9 && d.length !== 10) return { problem: 'má ' + d.length + ' ' + cisliceWord_(d.length) + ' (má mít 9 nebo 10)', date: null };
+    var yy = +d.slice(0, 2), mm = +d.slice(2, 4), dd = +d.slice(4, 6);
+    if (mm > 70) mm -= 70; else if (mm > 50) mm -= 50; else if (mm > 20) mm -= 20;
+    var year = d.length === 9 ? (yy < 54 ? 1900 + yy : 1800 + yy) : (yy < 54 ? 2000 + yy : 1900 + yy);
+    var dt = new Date(year, mm - 1, dd);
+    if (mm < 1 || mm > 12 || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) return { problem: 'neobsahuje platné datum narození', date: null };
+    if (d.length === 10) {
+      var mod = Number(d.slice(0, 9)) % 11;
+      var check = mod === 10 ? 0 : mod;
+      if (check !== +d.charAt(9)) return { problem: 'nesedí kontrolní číslice (překlep?)', date: dt };
+    }
+    return { problem: '', date: dt };
+  }
+  function parseCzDate_(s) {
+    var m = String(s || '').match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+    return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null;
+  }
+  function validatePlayerData_(p, changes) {
+    var v = {}, out = [];
+    Object.keys(p).forEach(function(k) { v[k] = p[k]; });
+    Object.keys(changes || {}).forEach(function(k) { v[k] = changes[k]; });
+    var touched = function(k) { return !changes || (k in changes); };
+    [['telefonHrac', 'Telefon hráče'], ['zastupceTelefon', 'Telefon zástupce'], ['zastupce2Telefon', 'Telefon 2. zástupce']].forEach(function(f) {
+      if (!touched(f[0])) return;
+      var pr = phoneProblem_(v[f[0]]);
+      if (pr) out.push(f[1] + ' „' + v[f[0]] + '“ ' + pr + '.');
+    });
+    [['emailHrac', 'E-mail hráče'], ['zastupceEmail', 'E-mail zástupce'], ['zastupce2Email', 'E-mail 2. zástupce']].forEach(function(f) {
+      if (!touched(f[0])) return;
+      var e = String(v[f[0]] || '').trim();
+      if (e && !EMAIL_RE_.test(e)) out.push(f[1] + ' „' + e + '“ nevypadá jako platná e-mailová adresa.');
+    });
+    if (touched('rodneCislo') && v.rodneCislo) {
+      var rc = rodneCisloCheck_(v.rodneCislo);
+      if (rc.problem) out.push('Rodné číslo „' + v.rodneCislo + '“ ' + rc.problem + '.');
+      var bd = parseCzDate_(v.datumNarozeni);
+      if (rc.date && bd && (rc.date.getDate() !== bd.getDate() || rc.date.getMonth() !== bd.getMonth() || rc.date.getFullYear() % 100 !== bd.getFullYear() % 100)) {
+        out.push('Rodné číslo neodpovídá datu narození ' + v.datumNarozeni + ' (podle RČ ' + rc.date.getDate() + '. ' + (rc.date.getMonth() + 1) + '. ' + rc.date.getFullYear() + ').');
+      }
+      var rcd = normalizeDigits_(v.rodneCislo);
+      var other = (DATA.players || []).find(function(x) { return x.sheetRow !== p.sheetRow && normalizeDigits_(x.rodneCislo) === rcd; });
+      if (other) out.push('Stejné rodné číslo už má ' + other.jmenoCele + ' — možná duplicita.');
+    }
+    if (touched('psc') && v.psc && normalizeDigits_(v.psc).length !== 5) out.push('PSČ „' + v.psc + '“ nemá 5 číslic.');
+    if (touched('id') && v.id) {
+      var idd = String(v.id).trim();
+      if (!/^\d+$/.test(idd)) out.push('FAČR ID „' + idd + '“ obsahuje i jiné znaky než číslice.');
+      else if (idd.length !== 8) out.push('FAČR ID „' + idd + '“ má ' + idd.length + ' ' + cisliceWord_(idd.length) + ' (obvykle 8).');
+      var otherId = (DATA.players || []).find(function(x) { return x.sheetRow !== p.sheetRow && String(x.id || '').trim() === idd; });
+      if (otherId) out.push('Stejné FAČR ID už má ' + otherId.jmenoCele + '.');
+    }
+    return out;
+  }
+
+  // ---------- Hlídání duplicit ----------
+  // Groups of players in "Seznam" that are probably the same person: same rodné číslo, same
+  // FAČR ID, or the same name + date of birth. Shown on "Co zbývá udělat" and announced once
+  // (per new group) as a notification after loading.
+  function findDuplicates_() {
+    var groups = [], seen = {};
+    function add(kind, key, list) {
+      if (list.length < 2) return;
+      var id = kind + ':' + key;
+      if (seen[id]) return;
+      seen[id] = true;
+      groups.push({ id: id, kind: kind, players: list });
+    }
+    var by = { rc: {}, id: {}, name: {} };
+    (DATA.players || []).forEach(function(p) {
+      var rc = normalizeDigits_(p.rodneCislo);
+      if (rc) (by.rc[rc] = by.rc[rc] || []).push(p);
+      var id = String(p.id || '').trim();
+      if (id) (by.id[id] = by.id[id] || []).push(p);
+      var nk = nameKey_(p.jmeno, p.prijmeni) + '|' + String(p.datumNarozeni || '').replace(/\s/g, '');
+      if (p.jmeno || p.prijmeni) (by.name[nk] = by.name[nk] || []).push(p);
+    });
+    Object.keys(by.rc).forEach(function(k) { add('stejné rodné číslo', k, by.rc[k]); });
+    Object.keys(by.id).forEach(function(k) { add('stejné FAČR ID', k, by.id[k]); });
+    Object.keys(by.name).forEach(function(k) {
+      var list = by.name[k];
+      // Skip a name group that is fully covered by an RČ group already listed.
+      if (list.length > 1 && !groups.some(function(g) { return list.every(function(p) { return g.players.indexOf(p) !== -1; }); })) add('stejné jméno a datum narození', k, list);
+    });
+    return groups;
+  }
+  var DUP_SEEN_KEY = 'fks_dup_seen_v1';
+  function announceDuplicates_() {
+    if (!DATA || DATA.role !== 'admin') return;
+    var groups = findDuplicates_();
+    var seen = [];
+    try { seen = JSON.parse(localStorage.getItem(DUP_SEEN_KEY) || '[]'); } catch (e) {}
+    var fresh = groups.filter(function(g) { return seen.indexOf(g.id) === -1; });
+    if (fresh.length) {
+      pushNotification('Možné duplicity v Seznamu (' + fresh.length + '): ' + fresh.map(function(g) {
+        return g.players.map(function(p) { return p.jmenoCele; }).join(' / ') + ' (' + g.kind + ')';
+      }).join('; ') + '. Podrobnosti v přehledu „Co zbývá udělat“.', 'warn');
+    }
+    try { localStorage.setItem(DUP_SEEN_KEY, JSON.stringify(groups.map(function(g) { return g.id; }))); } catch (e) {}
+  }
+  function duplicatesHtml_() {
+    var groups = findDuplicates_();
+    if (!groups.length) return '';
+    return '<div class="prehled-dups">' +
+      '<div class="prehled-dups-title">&#9888; Možné duplicity (' + groups.length + ')</div>' +
+      groups.map(function(g) {
+        return '<div class="prehled-dup-row"><span class="prehled-dup-kind">' + esc(g.kind) + ':</span> ' +
+          g.players.map(function(p) {
+            return '<a href="javascript:void(0)" onclick="openDetail(' + p.sheetRow + ')">' + esc(p.jmenoCele) + '</a> <span class="prehled-sub">(' + esc(p.datumNarozeni || '—') + ', řádek ' + p.sheetRow + ')</span>';
+          }).join(' · ') + '</div>';
+      }).join('') +
+      '<div class="prehled-sub" style="margin-top:6px;">Pokud jde o stejného hráče, smažte nadbytečný řádek na jeho kartě („Smazat trvale“). Sourozenci se stejným jménem se sem nedostanou — liší se datem narození.</div>' +
+    '</div>';
+  }
+
+  // ---------- Historie změn ----------
+  // Every change made in the app is appended to a "Historie" sheet (created automatically
+  // the first time): when, who, which player, what action, which field, old → new value.
+  // Writes are queued one after another so concurrent changes can't race each other.
+  var HISTORY_SHEET = 'Historie';
+  var HISTORY_HEADER = ['Datum a čas', 'Uživatel', 'Hráč', 'Rodné číslo', 'Akce', 'Položka', 'Původní hodnota', 'Nová hodnota'];
+  var historyQueue_ = Promise.resolve();
+  var historySheetReady_ = false;
+  function historyTimestamp_() {
+    var d = new Date();
+    return d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear() + ' ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+  function ensureHistorySheet_() {
+    if (historySheetReady_) return Promise.resolve();
+    var api = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID;
+    var auth = { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+    return fetch(api + '?fields=' + encodeURIComponent('sheets.properties.title'), { headers: auth }).then(function(r) { return r.json(); }).then(function(json) {
+      var exists = (json.sheets || []).some(function(s) { return s.properties.title === HISTORY_SHEET; });
+      if (exists) return;
+      return fetch(api + ':batchUpdate', { method: 'POST', headers: auth,
+        body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HISTORY_SHEET, gridProperties: { frozenRowCount: 1 } } } }] })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+        return fetch(api + '/values/' + encodeURIComponent(HISTORY_SHEET + '!A1') + '?valueInputOption=RAW', { method: 'PUT', headers: auth, body: JSON.stringify({ values: [HISTORY_HEADER] }) });
+      });
+    }).then(function() { historySheetReady_ = true; });
+  }
+  // entries: [{ field: 'Telefon hráče', old: '…', new: '…' }] (one history row each);
+  // an empty list writes one row with just the action.
+  function logHistory_(p, action, entries) {
+    if (!DATA || DATA.role !== 'admin') return Promise.resolve();
+    var who = DATA.userEmail || '';
+    var name = p ? (p.jmenoCele || '') : '—';
+    var rc = p && p.rodneCislo ? "'" + formatRodneCislo_(p.rodneCislo) : '';
+    var txt = function(x) { x = x == null ? '' : String(x); return x && /^[=+\-@]/.test(x) ? "'" + x : x; };
+    var rows = (entries && entries.length ? entries : [{ field: '', old: '', new: '' }]).map(function(e) {
+      return [historyTimestamp_(), who, name, rc, action, e.field || '', txt(e.old), txt(e.new)];
+    });
+    historyQueue_ = historyQueue_.then(function() {
+      return ensureHistorySheet_().then(function() {
+        return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(HISTORY_SHEET + '!A1') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: rows })
+        });
+      }).then(function(r) {
+        if (r && !r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      }).catch(function(err) {
+        pushNotification('Zápis do historie změn se nezdařil: ' + err.message, 'warn');
+      });
+    });
+    return historyQueue_;
+  }
+  function loadPlayerHistory_(sheetRow) {
+    var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
+    var box = document.getElementById('historyBox');
+    if (!p || !box) return;
+    box.innerHTML = '<div class="prehled-sub">Načítám historii…</div>';
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(HISTORY_SHEET) + '?valueRenderOption=FORMATTED_VALUE', {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    }).then(function(r) {
+      if (r.status === 400) return { values: [] }; // sheet doesn't exist yet
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function(json) {
+      var rc = normalizeDigits_(p.rodneCislo);
+      var nm = contactNorm_(p.jmenoCele);
+      var rows = (json.values || []).slice(1).filter(function(r) {
+        var rrc = normalizeDigits_(r[3]);
+        return rc ? rrc === rc || (!rrc && contactNorm_(r[2]) === nm) : contactNorm_(r[2]) === nm;
+      }).reverse();
+      if (!rows.length) { box.innerHTML = '<div class="prehled-sub">Zatím žádné zaznamenané změny. (Historie se zapisuje od 1. 10. 2026.)</div>'; return; }
+      box.innerHTML = '<div class="history-wrap"><table class="history-table"><thead><tr><th>Kdy</th><th>Kdo</th><th>Akce</th><th>Položka</th><th>Původně</th><th>Nově</th></tr></thead><tbody>' +
+        rows.map(function(r) {
+          return '<tr><td>' + esc(r[0] || '') + '</td><td>' + esc(String(r[1] || '').replace(/@.*/, '')) + '</td><td>' + esc(r[4] || '') + '</td><td>' + esc(r[5] || '') + '</td><td class="h-old">' + esc(r[6] || '') + '</td><td>' + esc(r[7] || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }).catch(function(err) {
+      box.innerHTML = '<div class="prehled-sub" style="color:var(--red);">Historii se nepodařilo načíst: ' + esc(err.message) + '</div>';
+    });
+  }
+
+  // ---------- Přechod na novou sezónu ----------
+  // In Nastavení: 1) backs up the whole "Seznam" sheet as a copy ("Záloha Seznam …"),
+  // 2) clears the chosen seasonal checklist steps (+ their DATUM columns) for every player,
+  // 3) optionally shifts every category's birth-year range by +1 (U9 becomes the kids born a
+  // year later, everybody moves up a category). Logged into "Historie".
+  var SEASON_DEFAULT_RESET = ['CASH KIS', 'CASH FAČR', 'PL. JARO'];
+  function seasonLabel_() {
+    var d = new Date();
+    var y = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+    return 'Seznam hráčů ' + String(y).slice(-2) + '/' + String(y + 1).slice(-2);
+  }
+  function seasonBodyHtml_() {
+    var keys = CHECKLIST_KEYS.filter(function(k) { return DATA.colIndex && DATA.colIndex.checklistCols && DATA.colIndex.checklistCols[k] >= 0; });
+    return '<div style="font-size:12px;color:var(--muted);">Použijte jednou ročně při začátku nové sezóny. Nejdřív se automaticky vytvoří záloha celého listu „Seznam“ (jako nový list v tabulce), takže se dá vše dohledat.</div>' +
+      '<div style="font-size:12px;font-weight:600;margin-top:4px;">1. Vynulovat u všech hráčů tyto položky checklistu:</div>' +
+      '<div class="share-fields-grid" id="seasonKeys">' + keys.map(function(k) {
+        return '<label class="share-field-row"><input type="checkbox" value="' + esc(k) + '"' + (SEASON_DEFAULT_RESET.indexOf(k) !== -1 ? ' checked' : '') + '> ' + esc(CHECKLIST_LABELS[k] || k) + '</label>';
+      }).join('') + '</div>' +
+      '<label class="share-field-row" style="margin-top:6px;"><input type="checkbox" id="seasonShift" checked> 2. Posunout ročníky všech kategorií o 1 rok (hráči postoupí do vyšší kategorie)</label>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">' +
+        '<button class="icon-btn toolbar-btn" onclick="confirmNewSeason_()">Spustit přechod na novou sezónu…</button>' +
+        '<span id="seasonStatus" style="font-size:12px;color:var(--muted);"></span>' +
+      '</div>';
+  }
+  function confirmNewSeason_() {
+    if (!DATA || DATA.role !== 'admin') return;
+    var keys = Array.prototype.slice.call(document.querySelectorAll('#seasonKeys input:checked')).map(function(i) { return i.value; });
+    var shift = document.getElementById('seasonShift').checked;
+    if (!keys.length && !shift) { document.getElementById('seasonStatus').textContent = 'Není vybráno nic ke změně.'; return; }
+    var rules = (DATA.categoryRules || []).filter(function(r) { return r.sheetBacked && (r.from != null || r.to != null); });
+    document.getElementById('modalBox').innerHTML =
+      '<h2>Přechod na novou sezónu</h2>' +
+      '<div style="font-size:13px;margin-bottom:14px;line-height:1.55;">' +
+        '<div>&#10003; Vytvoří se záloha listu „Seznam“.</div>' +
+        (keys.length ? '<div>&#10003; U všech <b>' + DATA.players.length + '</b> hráčů se vynuluje: <b>' + esc(keys.map(function(k) { return CHECKLIST_LABELS[k] || k; }).join(', ')) + '</b> (včetně dat splnění).</div>' : '') +
+        (shift ? '<div>&#10003; Ročníky ' + rules.length + ' kategorií se posunou o +1 rok (např. ' + esc(rules.slice(0, 2).map(function(r) { return displayCategoryLabel(r.label) + ': ' + (r.from || '…') + '–' + (r.to || '…') + ' → ' + (r.from ? r.from + 1 : '…') + '–' + (r.to ? r.to + 1 : '…'); }).join(', ')) + ').</div>' : '') +
+        '<div style="margin-top:10px;color:var(--red);">Pro potvrzení napište <b>NOVÁ SEZÓNA</b>:</div>' +
+        '<input id="seasonConfirmInput" type="text" autocomplete="off" style="margin-top:6px;width:100%;box-sizing:border-box;background:#12151a;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;">' +
+      '</div>' +
+      '<div class="modal-actions">' +
+        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
+        '<button class="icon-btn toolbar-btn" id="seasonGoBtn" style="background:var(--red);color:#fff;border-color:var(--red);">Provést</button>' +
+      '</div>';
+    document.getElementById('modalOverlay').classList.add('open');
+    document.getElementById('seasonGoBtn').onclick = function() {
+      var t = stripDiacritics_(document.getElementById('seasonConfirmInput').value).trim().toUpperCase();
+      if (t !== 'NOVA SEZONA') { document.getElementById('seasonConfirmInput').style.borderColor = 'var(--red)'; return; }
+      closeModal();
+      runNewSeason_(keys, shift, rules);
+    };
+  }
+  function runNewSeason_(keys, shift, rules) {
+    var statusEl = document.getElementById('seasonStatus');
+    var say = function(t) { if (statusEl) statusEl.textContent = t; };
+    var api = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID;
+    var auth = { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+    var ok = function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
+      return r.json();
+    };
+    var d = new Date();
+    var backupName = 'Záloha Seznam ' + d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2);
+    say('Vytvářím zálohu listu Seznam…');
+    getSheetId_('Seznam').then(function(sid) {
+      return fetch(api + ':batchUpdate', { method: 'POST', headers: auth,
+        body: JSON.stringify({ requests: [{ duplicateSheet: { sourceSheetId: sid, newSheetName: backupName, insertSheetIndex: 99 } }] })
+      }).then(ok);
+    }).then(function() {
+      var data = [];
+      keys.forEach(function(k) {
+        var ci = DATA.colIndex.checklistCols[k];
+        var di = DATA.colIndex.checklistDateCols ? DATA.colIndex.checklistDateCols[k] : -1;
+        DATA.players.forEach(function(p) {
+          if (ci >= 0) data.push({ range: 'Seznam!' + colIndexToLetter(ci) + p.sheetRow, values: [[false]] });
+          if (di != null && di >= 0) data.push({ range: 'Seznam!' + colIndexToLetter(di) + p.sheetRow, values: [['']] });
+        });
+      });
+      if (shift && DATA.categoryCol != null && DATA.categoryCol >= 0) {
+        rules.forEach(function(r) {
+          data.push({ range: 'Kategorie!' + colIndexToLetter(DATA.categoryCol) + r.sheetRow + ':' + colIndexToLetter(DATA.categoryCol + 1) + r.sheetRow,
+            values: [[r.from != null ? r.from + 1 : '', r.to != null ? r.to + 1 : '']] });
+        });
+      }
+      if (!data.length) return;
+      say('Zapisuji změny (' + data.length + ' buněk)…');
+      return fetch(api + '/values:batchUpdate', { method: 'POST', headers: auth, body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: data }) }).then(ok);
+    }).then(function() {
+      var summary = [];
+      if (keys.length) summary.push({ field: 'Vynulováno u ' + DATA.players.length + ' hráčů', old: '', new: keys.map(function(k) { return CHECKLIST_LABELS[k] || k; }).join(', ') });
+      if (shift) summary.push({ field: 'Ročníky kategorií', old: '', new: 'posunuto o +1 rok (počet kategorií: ' + rules.length + ')' });
+      summary.push({ field: 'Záloha', old: '', new: 'list „' + backupName + '“' });
+      logHistory_(null, 'Přechod na novou sezónu', summary);
+      say('Hotovo. Záloha: „' + backupName + '“.');
+      pushNotification('Přechod na novou sezónu dokončen. Záloha původních dat je v listu „' + backupName + '“.', 'info');
+      loadData();
+    }).catch(function(err) {
+      say('Chyba: ' + err.message);
+      pushNotification('Přechod na novou sezónu selhal: ' + err.message + ' (Pokud už vznikla záloha, data se dají obnovit z ní.)', 'error');
+    });
+  }
+
   // ---------- Přehled „Co zbývá udělat“ ----------
   // One row per active checklist step: how many players still miss it, a progress bar and a
   // per-category breakdown. Respects the category chips in the sidebar (like the map). Clicking
@@ -3111,6 +3451,7 @@
       '<div class="prehled-summary" role="button" tabindex="0" onclick="openPrehledAllMissing_()" title="Zobrazit hráče, kterým něco chybí">' +
         '<b>' + allDone + '</b> z ' + total + ' hráčů má vše hotovo' + (total - allDone ? ' · <span style="color:var(--accent);">' + (total - allDone) + ' hráčům ještě něco chybí &rsaquo;</span>' : '') +
       '</div>' +
+      duplicatesHtml_() +
       '<div class="prehled-list">' + rowsHtml + '</div>' +
       '<div style="font-size:11px;color:#5a6169;margin-top:10px;">Kliknutím na řádek zobrazíte hráče, kterým daný krok chybí; kliknutím na kategorii jen hráče z ní. Výběr kategorií vlevo zúží celý přehled.</div>';
   }
@@ -3529,6 +3870,7 @@
             '<div class="settings-col">' +
               settingsBox_('fotky', iconCamera, 'Fotky hráčů', fotkyBody, true) +
               settingsBox_('email', iconMail, 'Šablona uvítacího e-mailu', emailBody, true) +
+              settingsBox_('sezona', iconList, 'Přechod na novou sezónu', seasonBodyHtml_(), true) +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -3991,6 +4333,7 @@
         body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: pdataArr })
       });
     }).then(function() {
+      logHistory_(p, 'Přidán do Seznamu (z KIS)', []);
       pushNotification('Hráč ' + p.jmenoCele + ' přidán do tabulky (řádek ' + targetRow + '). Zkontrolujte prosím FAČR ID a kategorii přímo v tabulce.', 'info');
       return createContactsForPendingUser_(p);
     }).then(function(contactSummary) {
@@ -5148,6 +5491,8 @@
         '</div>' +
         '</div>' +
       '</div>' +
+      (isAdmin ? '<div class="info-box detail-history"><span class="box-title">Historie změn</span>' +
+        '<div id="historyBox"><button class="icon-btn toolbar-btn" onclick="loadPlayerHistory_(' + p.sheetRow + ')">Zobrazit historii změn</button></div></div>' : '') +
     '</div>';
   }
 
