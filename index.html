@@ -395,6 +395,11 @@
     .player-table thead th { vertical-align: bottom; }
     .player-table th.pt-ck-th { padding: 8px 0 10px; width: 24px; min-width: 24px; text-align: center; }
     .player-table th.pt-ck-th span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; font-size: 10px; letter-spacing: .04em; line-height: 1; }
+    .player-table th.pt-sortable { cursor: pointer; user-select: none; }
+    .player-table th.pt-sortable:hover, .player-table th.sorted { color: var(--accent); }
+    .player-table .pt-sort-arrow { margin-left: 4px; font-size: 9px; opacity: 0; }
+    .player-table th.pt-sortable:hover .pt-sort-arrow { opacity: .4; }
+    .player-table th.sorted .pt-sort-arrow { opacity: 1; }
     .player-table td.pt-note { max-width: 280px; min-width: 120px; overflow: hidden; text-overflow: ellipsis; }
     .detail-note { margin-bottom: 22px; flex-direction: row; align-items: baseline; gap: 14px; min-width: 0; }
     .detail-note .box-title { flex-shrink: 0; }
@@ -532,7 +537,7 @@
         </button><div class="name">Seznam hráčů</div>
         <label class="top-search" title="Hledat hráče podle jména">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="search" id="topSearch" placeholder="Hledat hráče…" autocomplete="off" spellcheck="false" oninput="onTopSearch_(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onTopSearch_('');this.blur();}">
+          <input type="search" id="topSearch" placeholder="Hledat jméno, telefon, e-mail, ID…" title="Hledá ve jménu, zástupcích, telefonech, e-mailech, adrese, poznámce, FAČR ID a rodném čísle (bez ohledu na diakritiku)" autocomplete="off" spellcheck="false" oninput="onTopSearch_(this.value)" onkeydown="if(event.key==='Escape'){this.value='';onTopSearch_('');this.blur();}">
           <kbd class="top-search-kbd" title="Klávesová zkratka">/</kbd>
           <button type="button" class="top-search-clear" aria-label="Vymazat hledání" onmousedown="event.preventDefault();" onclick="event.preventDefault(); var i=document.getElementById('topSearch'); i.value=''; onTopSearch_(''); i.focus();"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
         </label>
@@ -611,7 +616,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – změna telefonu nahradí staré číslo v kontaktu';
+  var APP_VERSION = '1. 10. 2026 – chytřejší vyhledávání, řazení podle sloupců';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -1319,7 +1324,7 @@
     registerCombo_('checklistStatus', checklistStatusOptions, state.checklistStatus, function(v) { state.checklistStatus = v; renderFilterPanel(); render(); });
 
     el.innerHTML = '<div class="filter-panel-inner">' +
-        '<input type="search" id="sidebarSearch" placeholder="Hledat jméno…" value="' + esc(state.q) + '">' +
+        '<input type="search" id="sidebarSearch" placeholder="Jméno, telefon, e-mail…" value="' + esc(state.q) + '">' +
         '<div class="fp-row-2">' + comboBtnHtml_('rok') + comboBtnHtml_('city') + '</div>' +
         '<div class="fp-divider"></div>' +
         '<div class="fp-row-2">' + comboBtnHtml_('checklistKey') + comboBtnHtml_('checklistStatus') + '</div>' +
@@ -1953,12 +1958,37 @@
     return 'background:conic-gradient(' + (color || 'var(--accent)') + ' ' + pct + '%, var(--border) ' + pct + '% 100%);';
   }
 
+  // Search: ignores diacritics and case ("svab" finds "Šváb") and looks at name, guardians,
+  // e-mails, address, note, FAČR ID, rodné číslo and phones. Several words must all match
+  // (in any field), e.g. "novak u9" or "jana pardubice". A word with digits is also compared
+  // digits-only, so "731 179 719", "+420731179719" or "190405/0511" match the stored values.
+  function searchNorm_(v) { return stripDiacritics_(String(v == null ? '' : v)).toLowerCase(); }
+  function playerSearchText_(p) {
+    var text = [p.jmenoCele, p.prijmeni + ' ' + p.jmeno, p.zastupceJmeno, p.zastupce2Jmeno, p.emailHrac, p.zastupceEmail, p.zastupce2Email,
+      p.ulice, p.cp, p.mesto, p.poznamka, p.id, p.kategorie, displayCategoryLabel(p.categoryGroup), p.categoryGroup].map(searchNorm_).join(' | ');
+    var digits = [p.telefonHrac, p.zastupceTelefon, p.zastupce2Telefon, p.rodneCislo, p.id, p.psc].map(function(v) { return normalizeDigits_(v); }).filter(Boolean).join(' | ');
+    return { text: text, digits: digits };
+  }
+  function playerMatchesQuery_(p, q) {
+    var hay = playerSearchText_(p);
+    // Glue digit groups back together first ("+420 777 144 507" → one word).
+    var words = searchNorm_(q).replace(/(\d)[\s\/.-]+(?=\d)/g, '$1').split(/\s+/).filter(Boolean);
+    return words.every(function(w) {
+      if (hay.text.indexOf(w) !== -1) return true;
+      var d = w.replace(/\D/g, '');
+      if (d.length >= 3) {
+        if (d.length > 9 && d.indexOf('420') === 0) d = d.slice(3);
+        return hay.digits.indexOf(d) !== -1;
+      }
+      return false;
+    });
+  }
   function filteredPlayers() {
     var result = DATA.players.filter(function(p) {
       if (state.categories.length && state.categories.indexOf(p.categoryGroup) === -1) return false;
       if (state.rok !== 'Vše' && String(p.rok) !== state.rok) return false;
       if (state.city !== 'Vše' && p.mesto !== state.city) return false;
-      if (state.q && p.jmenoCele.toLowerCase().indexOf(state.q.toLowerCase()) === -1) return false;
+      if (state.q && !playerMatchesQuery_(p, state.q)) return false;
       if (state.missingAnyStep && activeChecklistKeys(p).every(function(k) { return p.checklist[k]; })) return false;
       if (state.noPhoto && p.photoDataUrl) return false;
       if (state.checklistKey) {
@@ -1997,14 +2027,56 @@
         (a.categoryGroup || '').localeCompare(b.categoryGroup || '', 'cs');
     };
     if (key === 'prijmeni') return function(a, b) { return (a.prijmeni || '').localeCompare(b.prijmeni || '', 'cs', { sensitivity: 'base' }); };
+    // Table-header keys (PC table). Empty values always go last (see sortPlayersList_).
+    if (key === 'jmeno') return function(a, b) { return (a.jmenoCele || '').localeCompare(b.jmenoCele || '', 'cs', { sensitivity: 'base' }); };
+    if (key === 'narozeni') return function(a, b) { return birthSortValue_(a) - birthSortValue_(b); };
+    if (key.indexOf('ck:') === 0) {
+      var ck = key.slice(3);
+      return function(a, b) { return (a.checklist[ck] ? 1 : 0) - (b.checklist[ck] ? 1 : 0); };
+    }
+    if (TABLE_SORT_TEXT_[key]) {
+      var get = TABLE_SORT_TEXT_[key];
+      return function(a, b) { return String(get(a)).localeCompare(String(get(b)), 'cs', { sensitivity: 'base', numeric: true }); };
+    }
     return null;
+  }
+  var TABLE_SORT_TEXT_ = {
+    id: function(p) { return p.id || ''; },
+    rodneCislo: function(p) { return normalizeDigits_(p.rodneCislo); },
+    adresa: function(p) { return addressLine_(p); },
+    poznamka: function(p) { return p.poznamka || ''; },
+    zastupce: function(p) { return p.zastupceJmeno || ''; },
+    zastupceTelefon: function(p) { return normalizeDigits_(p.zastupceTelefon); },
+    zastupceEmail: function(p) { return p.zastupceEmail || ''; },
+    telefonHrac: function(p) { return normalizeDigits_(p.telefonHrac); },
+    emailHrac: function(p) { return p.emailHrac || ''; }
+  };
+  function birthSortValue_(p) {
+    var m = String(p.datumNarozeni || '').match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+    return m ? (+m[3]) * 10000 + (+m[2]) * 100 + (+m[1]) : 0;
+  }
+  function sortValueEmpty_(key, p) {
+    if (key === 'narozeni') return !birthSortValue_(p);
+    var get = TABLE_SORT_TEXT_[key];
+    return get ? !String(get(p)) : false;
+  }
+  // Click on a PC table header: first click sorts ascending, second descending, third cancels.
+  function sortByColumn_(key) {
+    if (state.sortKey !== key) { state.sortKey = key; state.sortDir = 'asc'; }
+    else if (state.sortDir === 'asc') state.sortDir = 'desc';
+    else { state.sortKey = ''; state.sortDir = 'asc'; }
+    render();
+    renderSortPanel();
   }
   function sortPlayersList_(players) {
     var cmp = sortComparator_(state.sortKey);
     if (!cmp) return players;
-    var sorted = players.slice().sort(cmp);
+    var key = state.sortKey;
+    var filled = players.filter(function(p) { return !sortValueEmpty_(key, p); });
+    var empty = players.filter(function(p) { return sortValueEmpty_(key, p); });
+    var sorted = filled.sort(cmp);
     if (state.sortDir === 'desc') sorted.reverse();
-    return sorted;
+    return sorted.concat(empty);
   }
   function renderSortPanel() {
     var el = document.getElementById('sortPanel');
@@ -2012,6 +2084,7 @@
     el.innerHTML = '<div class="filter-panel-inner">' +
         '<select id="sortKeySelect">' +
           '<option value=""' + (!state.sortKey ? ' selected' : '') + '>Bez řazení</option>' +
+          (state.sortKey && ['vek', 'checklist', 'kategorie', 'prijmeni'].indexOf(state.sortKey) === -1 ? '<option value="' + esc(state.sortKey) + '" selected>Podle sloupce v tabulce</option>' : '') +
           '<option value="vek"' + (state.sortKey === 'vek' ? ' selected' : '') + '>Podle věku</option>' +
           '<option value="checklist"' + (state.sortKey === 'checklist' ? ' selected' : '') + '>Podle stavu checklistu</option>' +
           '<option value="kategorie"' + (state.sortKey === 'kategorie' ? ' selected' : '') + '>Podle kategorie</option>' +
@@ -4736,15 +4809,25 @@
       '</tr>';
     }).join('');
     var checkboxTh = selectable ? '<th></th>' : '';
+    var sortable = showChecklist;
+    function th(key, label, cls) {
+      if (!sortable) return '<th' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(label) + '</th>';
+      var on = state.sortKey === key;
+      return '<th class="pt-sortable' + (on ? ' sorted' : '') + (cls ? ' ' + cls : '') + '" onclick="sortByColumn_(\'' + key + '\')" title="Kliknutím seřadit">' +
+        esc(label) + '<span class="pt-sort-arrow">' + (on ? (state.sortDir === 'asc' ? '▲' : '▼') : '▲') + '</span></th>';
+    }
     var statusTh = showChecklist ?
       (ckKeys.map(function(key, i) {
-        return '<th class="pt-ck-th' + (i === 0 ? ' pt-ck-first' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + '"><span>' + esc(key) + '</span></th>';
-      }).join('') + '<th class="pt-ck-count-th">Hotovo</th>') :
+        var k = 'ck:' + key, on = sortable && state.sortKey === k;
+        return '<th class="pt-ck-th' + (i === 0 ? ' pt-ck-first' : '') + (sortable ? ' pt-sortable' : '') + (on ? ' sorted' : '') + '" title="' + esc(CHECKLIST_LABELS[key] || key) + (sortable ? ' — kliknutím seřadit' : '') + '"' +
+          (sortable ? ' onclick="sortByColumn_(\'' + jsStr(k) + '\')"' : '') + '><span>' + esc(key) + (on ? (state.sortDir === 'asc' ? ' ▲' : ' ▼') : '') + '</span></th>';
+      }).join('') + th('checklist', 'Hotovo', 'pt-ck-count-th')) :
       '<th>Vyřazen</th>';
     return '<div class="player-table-wrap"><table class="player-table"><thead><tr>' +
       checkboxTh +
-      '<th></th><th class="pt-name-th">Jméno</th><th>Kategorie</th><th>Datum narození</th><th>FAČR ID</th><th>Rodné číslo</th><th>Adresa</th><th>Poznámka</th><th>Zástupce</th><th>Tel. zástupce</th><th>E-mail zástupce</th>' +
-      statusTh + '<th>Telefon hráče</th><th>E-mail hráče</th>' +
+      '<th></th>' + th('jmeno', 'Jméno', 'pt-name-th') + th('kategorie', 'Kategorie') + th('narozeni', 'Datum narození') + th('id', 'FAČR ID') + th('rodneCislo', 'Rodné číslo') +
+      th('adresa', 'Adresa') + th('poznamka', 'Poznámka') + th('zastupce', 'Zástupce') + th('zastupceTelefon', 'Tel. zástupce') + th('zastupceEmail', 'E-mail zástupce') +
+      statusTh + th('telefonHrac', 'Telefon hráče') + th('emailHrac', 'E-mail hráče') +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
