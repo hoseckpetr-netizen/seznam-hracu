@@ -601,7 +601,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '29. 9. 2026 – nové vyhledávací pole';
+  var APP_VERSION = '1. 10. 2026 – kategorie u nových uživatelů';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -3473,6 +3473,20 @@
       return nameKey_(x.jmeno, x.prijmeni) === key && String(x.datumNarozeni || '') === String(p.datumNarozeni || '');
     }) || null;
   }
+  // Category of a "Noví uživatelé" row: the roster player's own category once added to
+  // "Seznam", otherwise the year-range rule matching the birth year (column "Rok", or the
+  // year at the end of "Datum narození").
+  function pendingCategory_(p, rosterPlayer) {
+    if (rosterPlayer && rosterPlayer.categoryGroup) return { label: rosterPlayer.categoryGroup, color: rosterPlayer.categoryColor };
+    var rok = String(p.rok || '').trim();
+    if (!/^\d{4}$/.test(rok)) { var m = String(p.datumNarozeni || '').match(/(\d{4})\s*$/); rok = m ? m[1] : ''; }
+    var rule = (rok && DATA && DATA.categoryRules) ? matchCategoryRule_(rok, DATA.categoryRules) : null;
+    return rule ? { label: rule.label, color: rule.color } : null;
+  }
+  function pendingCategoryChip_(cat) {
+    if (!cat) return '<span class="chip" style="color:var(--muted);">kategorie nezjištěna</span>';
+    return '<span class="chip"><span class="dot" style="background:' + esc(cat.color) + '"></span>' + esc(displayCategoryLabel(cat.label)) + '</span>';
+  }
   // Compact, clickable checklist for a new player who's already in "Seznam" — small chips
   // that wrap inside the card, so the queue can be worked through without opening the card.
   // A click opens the same small confirmation bubble at the cursor as the desktop table.
@@ -3512,6 +3526,7 @@
          '<button class="icon-btn toolbar-btn" onclick="confirmRejectPendingUser(' + p.sheetRow + ')" style="color:var(--red);">Zamítnout</button>');
       var rosterPlayer = pendingRosterMatch_(p);
       if (rosterPlayer) actionsHtml += '<button class="icon-btn toolbar-btn" onclick="openDetail(' + rosterPlayer.sheetRow + ')">Karta hráče</button>';
+      var cat = pendingCategory_(p, rosterPlayer);
       var open = pendingBoxOpen_(p);
       var chevron = '<svg class="pending-box-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       return '<div class="pending-box' + (open ? '' : ' collapsed') + '" data-pending-row="' + p.sheetRow + '">' +
@@ -3519,11 +3534,13 @@
           '<span class="pending-box-head-main">' +
             (isAdded ? '<span style="color:var(--green);flex-shrink:0;">&#10003;</span>' : '') +
             '<b>' + esc(p.jmenoCele) + '</b><span style="color:var(--muted);">narozen ' + esc(p.datumNarozeni) + '</span>' +
+            pendingCategoryChip_(cat) +
           '</span>' +
           chevron +
         '</button>' +
         '<div class="pending-box-body">' +
           (isAdded ? '<div style="color:var(--green);font-size:11px;font-weight:700;margin-bottom:5px;">&#10003; PŘIDÁNO DO TABULKY — zbývá odeslat uvítací e-mail</div>' : '') +
+          '<div>Kategorie: ' + (cat ? esc(displayCategoryLabel(cat.label)) + (displayCategoryLabel(cat.label) !== cat.label ? ' <span style="color:var(--muted);">(' + esc(cat.label) + ')</span>' : '') : '<span style="color:var(--muted);">nezjištěna — zkontrolujte ročník v listu Kategorie</span>') + '</div>' +
           (p.rodneCislo ? '<div>Rodné číslo: ' + esc(formatRodneCislo_(p.rodneCislo)) + '</div>' : '') +
           '<div>Adresa: ' + (esc(addressLine) || '—') + '</div>' +
           (function() { var own = playerOwnContact_(p); return '<div>Hráč: ' + esc(formatPhoneForContact_(own.telefon) || '—') + ' · ' + esc(own.email || '—') + (own.telefon || own.email ? '' : ' <span style="color:var(--muted);">(vlastní kontakt nemá — v KIS je uveden kontakt zástupce)</span>') + '</div>'; })() +
