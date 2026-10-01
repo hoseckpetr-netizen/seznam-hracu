@@ -611,7 +611,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – hustší tabulka, kopírování ID, adresa do Map';
+  var APP_VERSION = '1. 10. 2026 – zpět z karty hráče do Nastavení';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2054,21 +2054,42 @@
   // entry, so the browser/phone back gesture ("Nefunguje zpět") does something sensible —
   // it lands back on the list — instead of leaving the app entirely (there was previously no
   // history.pushState anywhere, so back had nothing of the app's own to go back to).
+  // Back returns to the view the navigation started from (e.g. Nastavení → Karta hráče →
+  // back lands in Nastavení again, at the same scroll position), not always to the list.
   var navDepth = 0;
+  var navStack = [];
+  var renderedView = 'list', renderedRow = null;
+  var goingHome = false;
   function pushSubView() {
     navDepth++;
+    navStack.push({ view: renderedView, selectedRow: renderedRow, scrollY: window.scrollY || document.documentElement.scrollTop || 0 });
     try { history.pushState({ fksNavDepth: navDepth }, ''); } catch (e) {}
   }
   window.addEventListener('popstate', function() {
-    navDepth = Math.max(0, navDepth - 1);
-    state.view = 'list';
-    state.selectedRow = null;
+    var target = { view: 'list', selectedRow: null, scrollY: 0 };
+    if (goingHome) {
+      goingHome = false;
+      navDepth = 0; navStack = [];
+    } else {
+      navDepth = Math.max(0, navDepth - 1);
+      target = navStack.pop() || target;
+    }
+    var view = target.view || 'list';
+    if (view === 'detail' && !(DATA && DATA.players && DATA.players.some(function(x) { return x.sheetRow === target.selectedRow; }))) view = 'list';
+    state.view = view;
+    state.selectedRow = view === 'detail' ? target.selectedRow : null;
     render();
+    if (target.scrollY) window.scrollTo(0, target.scrollY);
   });
   function backToList() {
+    if (navDepth > 0) {
+      goingHome = true;
+      history.go(-navDepth);
+      return;
+    }
+    navStack = [];
     state.view = 'list';
     state.selectedRow = null;
-    if (navDepth > 0) { history.back(); } else { render(); }
     render();
   }
   function goHome() { backToList(); }
@@ -4796,6 +4817,8 @@
     var renderKey = state.view + (state.view === 'detail' ? (':' + state.selectedRow) : '');
     var isNavigation = renderKey !== lastRenderKey;
     lastRenderKey = renderKey;
+    renderedView = state.view;
+    renderedRow = state.view === 'detail' ? state.selectedRow : null;
     // A same-view re-render (e.g. after ticking a checklist step straight in the desktop
     // table) must not snap the table back to its left edge — the step columns sit at the far
     // right, so remember the wide table's horizontal scroll and put it back after the swap.
