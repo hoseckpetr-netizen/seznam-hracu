@@ -616,7 +616,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – chytřejší vyhledávání, řazení podle sloupců';
+  var APP_VERSION = '1. 10. 2026 – export do Excelu (Sdílet)';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2408,9 +2408,10 @@
     { key: 'telefonHrac', label: 'Telefon hráče' },
     { key: 'emailHrac', label: 'E-mail hráče' },
     { key: 'zastupce', label: 'Zákonný zástupce (jméno, telefon, e-mail)' },
+    { key: 'poznamka', label: 'Poznámka' },
     { key: 'checklist', label: 'Stav registračního checklistu' }
   ];
-  var DEFAULT_SHARE_FIELDS = { kategorie: true, datumNarozeni: true, adresa: true, id: false, rodneCislo: false, telefonHrac: false, emailHrac: false, zastupce: false, checklist: false };
+  var DEFAULT_SHARE_FIELDS = { kategorie: true, datumNarozeni: true, adresa: true, id: false, rodneCislo: false, telefonHrac: false, emailHrac: false, zastupce: false, poznamka: false, checklist: false };
   var SHARE_FIELDS_STATE_KEY = 'fks_share_fields_v1';
   var shareModalPlayers_ = [];
 
@@ -2441,6 +2442,7 @@
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
         '<button class="icon-btn toolbar-btn" onclick="confirmShareCopyText_()">Zkopírovat text</button>' +
         '<button class="icon-btn toolbar-btn" onclick="confirmSharePDF_()">PDF</button>' +
+        '<button class="icon-btn toolbar-btn" onclick="confirmShareExcel_()">Excel</button>' +
       '</div>';
     renderShareFieldsGrid_();
     document.getElementById('modalOverlay').classList.add('open');
@@ -2469,6 +2471,7 @@
     if (fields.telefonHrac) parts.push({ label: 'Telefon hráče', value: p.telefonHrac || '—' });
     if (fields.emailHrac) parts.push({ label: 'E-mail hráče', value: p.emailHrac || '—' });
     if (fields.zastupce) parts.push({ label: 'Zákonný zástupce', value: [p.zastupceJmeno, p.zastupceTelefon, p.zastupceEmail].filter(Boolean).join(', ') || '—' });
+    if (fields.poznamka) parts.push({ label: 'Poznámka', value: p.poznamka || '—' });
     if (fields.checklist) { var c = checklistCounts(p); parts.push({ label: 'Checklist', value: c.done + '/' + c.total + ' hotovo' }); }
     return parts;
   }
@@ -2506,6 +2509,60 @@
     window.print();
   }
 
+  // Excel (.xlsx) export of the same players and the same ticked fields — but as a real table:
+  // every value in its own column (first name / surname, street / č.p. / obec / PSČ, guardian
+  // name / phone / e-mail, one column per checklist step), so it can be sorted, filtered and
+  // used for a mail merge. Phones, rodné číslo and IDs are written as text (no lost zeros).
+  function confirmShareExcel_() {
+    var players = shareModalPlayers_;
+    var fields = loadShareFieldsState_();
+    closeModal();
+    if (typeof XLSX === 'undefined') { pushNotification('Knihovna pro Excel se nenačetla — zkuste obnovit stránku.', 'error'); return; }
+    var ckKeys = CHECKLIST_KEYS.filter(function(k) { return loadDisabledChecklistKeys_().indexOf(k) === -1; });
+    var any2 = players.some(function(p) { return p.zastupce2Jmeno || p.zastupce2Telefon || p.zastupce2Email; });
+    var cols = [['Příjmení', function(p) { return p.prijmeni; }], ['Jméno', function(p) { return p.jmeno; }]];
+    if (fields.kategorie) cols.push(['Kategorie', function(p) { return displayCategoryLabel(p.categoryGroup); }], ['Kategorie (celý název)', function(p) { return p.categoryGroup; }], ['Ročník', function(p) { return p.rok; }]);
+    if (fields.datumNarozeni) cols.push(['Datum narození', function(p) { return p.datumNarozeni; }], ['Věk', function(p) { return p.vek === '' || p.vek == null ? '' : Number(p.vek) || p.vek; }]);
+    if (fields.adresa) cols.push(['Ulice', function(p) { return p.ulice; }], ['Č.p.', function(p) { return p.cp; }], ['Obec', function(p) { return p.mesto; }], ['PSČ', function(p) { return p.psc; }]);
+    if (fields.id) cols.push(['FAČR ID', function(p) { return p.id; }]);
+    if (fields.rodneCislo) cols.push(['Rodné číslo', function(p) { return formatRodneCislo_(p.rodneCislo); }]);
+    if (fields.telefonHrac) cols.push(['Telefon hráče', function(p) { return p.telefonHrac; }]);
+    if (fields.emailHrac) cols.push(['E-mail hráče', function(p) { return p.emailHrac; }]);
+    if (fields.zastupce) {
+      cols.push(['Zástupce', function(p) { return p.zastupceJmeno; }], ['Tel. zástupce', function(p) { return p.zastupceTelefon; }], ['E-mail zástupce', function(p) { return p.zastupceEmail; }]);
+      if (any2) cols.push(['2. zástupce', function(p) { return p.zastupce2Jmeno; }], ['Tel. 2. zástupce', function(p) { return p.zastupce2Telefon; }], ['E-mail 2. zástupce', function(p) { return p.zastupce2Email; }]);
+    }
+    if (fields.poznamka) cols.push(['Poznámka', function(p) { return p.poznamka; }]);
+    if (fields.checklist) {
+      ckKeys.forEach(function(k) { cols.push([CHECKLIST_LABELS[k] || k, function(p) { return p.checklist[k] ? 'ANO' : 'NE'; }]); });
+      cols.push(['Hotovo', function(p) { var c = checklistCounts(p); return c.done + '/' + c.total; }]);
+    }
+    var textCols = ['FAČR ID', 'Rodné číslo', 'Telefon hráče', 'Tel. zástupce', 'Tel. 2. zástupce', 'PSČ', 'Hotovo'];
+    var aoa = [cols.map(function(c) { return c[0]; })].concat(players.map(function(p) {
+      return cols.map(function(c) { var v = c[1](p); return v == null ? '' : v; });
+    }));
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    cols.forEach(function(c, ci) {
+      if (textCols.indexOf(c[0]) === -1) return;
+      for (var r = 1; r < aoa.length; r++) {
+        var cell = ws[XLSX.utils.encode_cell({ r: r, c: ci })];
+        if (cell && cell.v !== '') { cell.t = 's'; cell.v = String(cell.v); }
+      }
+    });
+    ws['!cols'] = cols.map(function(c, ci) {
+      var w = c[0].length;
+      for (var r = 1; r < aoa.length; r++) w = Math.max(w, String(aoa[r][ci]).length);
+      return { wch: Math.min(Math.max(w + 2, 6), 50) };
+    });
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: cols.length - 1 } }) };
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Hráči');
+    var d = new Date();
+    var stamp = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var name = players.length === 1 ? ('Hrac ' + stripDiacritics_(players[0].jmenoCele)) : ('Soupiska ' + players.length + ' hracu');
+    XLSX.writeFile(wb, 'FK Slovany - ' + name + ' - ' + stamp + '.xlsx');
+    pushNotification('Excel stažen (' + players.length + (players.length === 1 ? ' hráč' : ' hráčů') + ').', 'info');
+  }
   function confirmShareCopyText_() {
     var players = shareModalPlayers_;
     var fields = loadShareFieldsState_();
