@@ -12,6 +12,7 @@
        an iOS home-screen icon still gets a nice touch icon but opens as a normal Safari
        tab, sharing the regular Safari session — Google Sign-In just works. -->
   <link rel="manifest" href="manifest.json">
+  <script>if ('serviceWorker' in navigator) window.addEventListener('load', function() { navigator.serviceWorker.register('sw.js').catch(function() {}); });</script>
   <meta name="theme-color" content="#0b0d10">
   <link rel="icon" href="icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -692,7 +693,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – nová tlačítka na PC';
+  var APP_VERSION = '1. 10. 2026 – instalace aplikace na mobil';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
