@@ -611,7 +611,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – zpět z karty hráče do Nastavení';
+  var APP_VERSION = '1. 10. 2026 – poznámka se přenáší do Vyřazených';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2154,6 +2154,7 @@
       '<div class="info-row"><span>Telefon zástupce</span><span class="info-value">' + (esc(p.zastupceTelefon) || '—') + '</span></div>' +
       '<div class="info-row"><span>E-mail zástupce</span><span class="info-value">' + (esc(p.zastupceEmail) || '—') + '</span></div>' +
       '<div class="info-row"><span>Adresa</span><span class="info-value">' + (esc(addressLine) || '—') + '</span></div>' +
+      (p.poznamka ? '<div class="info-row"><span>Poznámka</span><span class="info-value" style="white-space:pre-wrap;text-align:right;">' + esc(p.poznamka) + '</span></div>' : '') +
       '<div class="checklist-wrap" style="margin-top:10px;">' + checklistRows + '</div>' +
       '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
     document.getElementById('modalOverlay').classList.add('open');
@@ -2244,10 +2245,14 @@
     put('zastupceEmail', p.zastupceEmail);
     if (!dataArr.length) return;
 
-    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
+    (p.poznamka ? ensureNoteColumn_('Vyřazené').then(function(noteCol) {
+      dataArr.push({ range: 'Vyřazené!' + colIndexToLetter(noteCol) + targetRow, values: [["'" + p.poznamka]] });
+    }) : Promise.resolve()).then(function() {
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: dataArr })
+    });
     }).then(function(r) {
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
       return r.json();
@@ -2517,10 +2522,14 @@
       '</div>';
     document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
   }
-  // Adds a "Poznámka" column at the very end of "Seznam" (a brand-new grid column, so no
-  // existing data can be overwritten) and writes its header into the header row.
-  function ensureNoteColumn_() {
-    if (DATA.colIndex.poznamka >= 0) return Promise.resolve(DATA.colIndex.poznamka);
+  // Adds a "Poznámka" column at the very end of a sheet ("Seznam" by default, or "Vyřazené"
+  // when moving a player there) — a brand-new grid column, so no existing data can be
+  // overwritten — and writes its header into the header row.
+  function ensureNoteColumn_(sheetTitle) {
+    sheetTitle = sheetTitle || 'Seznam';
+    var colIndex = sheetTitle === 'Seznam' ? DATA.colIndex : DATA.vyrazeniColIndex;
+    var headerRowIdx = sheetTitle === 'Seznam' ? DATA.headerRowIdx : DATA.vyrazeniHeaderRowIdx;
+    if (colIndex.poznamka >= 0) return Promise.resolve(colIndex.poznamka);
     var api = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID;
     function ok(r) {
       if (!r.ok) return r.json().then(function(err) { throw new Error((err.error && err.error.message) || ('HTTP ' + r.status)); });
@@ -2530,8 +2539,8 @@
     return fetch(api + '?fields=' + encodeURIComponent('sheets.properties(sheetId,title,gridProperties.columnCount)'), {
       headers: { 'Authorization': 'Bearer ' + accessToken }
     }).then(ok).then(function(json) {
-      var sh = (json.sheets || []).find(function(x) { return x.properties.title === 'Seznam'; });
-      if (!sh) throw new Error('List "Seznam" v tabulce nebyl nalezen.');
+      var sh = (json.sheets || []).find(function(x) { return x.properties.title === sheetTitle; });
+      if (!sh) throw new Error('List "' + sheetTitle + '" v tabulce nebyl nalezen.');
       sheetId = sh.properties.sheetId;
       newCol = sh.properties.gridProperties.columnCount;
       return fetch(api + ':batchUpdate', {
@@ -2540,15 +2549,15 @@
         body: JSON.stringify({ requests: [{ appendDimension: { sheetId: sheetId, dimension: 'COLUMNS', length: 1 } }] })
       }).then(ok);
     }).then(function() {
-      var range = 'Seznam!' + colIndexToLetter(newCol) + (DATA.headerRowIdx + 1);
+      var range = "'" + sheetTitle + "'!" + colIndexToLetter(newCol) + (headerRowIdx + 1);
       return fetch(api + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW', {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({ values: [['Poznámka']] })
       }).then(ok);
     }).then(function() {
-      DATA.colIndex.poznamka = newCol;
-      pushNotification('Do listu "Seznam" byl přidán nový sloupec "Poznámka" (sloupec ' + colIndexToLetter(newCol) + ').', 'info');
+      colIndex.poznamka = newCol;
+      pushNotification('Do listu "' + sheetTitle + '" byl přidán nový sloupec "Poznámka" (sloupec ' + colIndexToLetter(newCol) + ').', 'info');
       return newCol;
     });
   }
