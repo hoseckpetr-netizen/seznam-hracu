@@ -513,6 +513,11 @@
          List tools (Sdílet, Vybrat, Filtr, Seřadit, Zrušit filtr, Aktualizovat) sit in the page
          heading next to "Aktivní hráči" — render() docks .sidebar-tools into .header-tools-slot. */
       .sidebar > .sidebar-tools { display: none !important; }
+      /* Centred page: the list (heading + table) is as wide as the table and sits in the
+         middle; the top bar's contents are aligned to the same left/right edges (alignTopBar_). */
+      .list-page { width: fit-content; max-width: 100%; margin: 0 auto; }
+      .list-page .player-table-wrap { max-width: 100%; }
+      .prehled-page { max-width: 980px; margin: 0 auto; }
       .header { align-items: center; flex-wrap: nowrap; gap: 16px; }
       .header h1 { white-space: nowrap; }
       .header-tools-slot { flex: 1; min-width: 0; display: flex; }
@@ -693,7 +698,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '1. 10. 2026 – nová ikona aplikace';
+  var APP_VERSION = '2. 10. 2026 – stránka na PC uprostřed';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2078,6 +2083,19 @@
     if (forced === 'mobile' && screen.width && window.innerWidth > screen.width * 1.15) z = String(Math.round(window.innerWidth / screen.width * 100) / 100);
     document.documentElement.style.zoom = z;
   }
+  // PC: line the top bar's contents up with the centred page below (table / card / settings),
+  // so the logo starts where the table starts and "Odhlásit" ends where it ends.
+  function alignTopBar_() {
+    var bar = document.querySelector('.sidebar');
+    var main = document.getElementById('main');
+    if (!bar || !main) return;
+    if (!isPcLayout_()) { bar.style.paddingLeft = bar.style.paddingRight = ''; return; }
+    var target = main.querySelector('.list-page, .detail-page, .settings-page, .prehled-page');
+    var w = target ? target.getBoundingClientRect().width : 0;
+    var vw = document.documentElement.clientWidth;
+    var pad = w && w < vw - 48 ? Math.round((vw - w) / 2) : 24;
+    bar.style.paddingLeft = bar.style.paddingRight = pad + 'px';
+  }
   function setLayoutMode_(mode) {
     try { localStorage.setItem(LAYOUT_MODE_KEY, mode); } catch (e) {}
     applyLayoutMode_();
@@ -2093,7 +2111,7 @@
       opt('mobile', 'Mobilní', 'vždy mobilní zobrazení') +
       opt('pc', 'Počítač', 'vždy zobrazení pro počítač');
   }
-  window.addEventListener('resize', function() { var before = layoutForced_; applyLayoutMode_(); if (before !== layoutForced_ && DATA) render(); });
+  window.addEventListener('resize', function() { var before = layoutForced_; applyLayoutMode_(); if (before !== layoutForced_ && DATA) render(); else alignTopBar_(); });
   try { applyLayoutMode_(); } catch (e) {}
   function onTopSearch_(v) {
     state.q = v;
@@ -2373,9 +2391,9 @@
        })) :
       '<div class="loading">Žádní vyřazení hráči.</div>';
 
-    return '<div class="header"><h1>Vyřazení hráči</h1><div class="header-tools-slot"></div><div class="count">' + players.length + ' hráčů</div></div>' +
+    return '<div class="list-page"><div class="header"><h1>Vyřazení hráči</h1><div class="header-tools-slot"></div><div class="count">' + players.length + ' hráčů</div></div>' +
       '<div style="font-size:11px;color:#5a6169;margin-bottom:10px;">Přehled hráčů přesunutých v tabulce do listu "Vyřazené". Pouze pro čtení.</div>' +
-      listHtml;
+      listHtml + '</div>';
   }
   function openVyrazeniDetail(sheetRow) {
     var p = (DATA.vyrazeni || []).find(function(x) { return x.sheetRow === sheetRow; });
@@ -3553,13 +3571,13 @@
         '<span class="prehled-pct">' + done + '/' + total + '</span>' +
       '</div>';
     }).join('');
-    return '<div class="header"><h1>Co zbývá udělat</h1><div class="count">' + total + ' hráčů · ' + (state.categories.length ? state.categories.map(displayCategoryLabel).join(', ') : 'všechny kategorie') + '</div></div>' +
+    return '<div class="prehled-page"><div class="header"><h1>Co zbývá udělat</h1><div class="count">' + total + ' hráčů · ' + (state.categories.length ? state.categories.map(displayCategoryLabel).join(', ') : 'všechny kategorie') + '</div></div>' +
       '<div class="prehled-summary" role="button" tabindex="0" onclick="openPrehledAllMissing_()" title="Zobrazit hráče, kterým něco chybí">' +
         '<b>' + allDone + '</b> z ' + total + ' hráčů má vše hotovo' + (total - allDone ? ' · <span style="color:var(--accent);">' + (total - allDone) + ' hráčům ještě něco chybí &rsaquo;</span>' : '') +
       '</div>' +
       duplicatesHtml_() +
       '<div class="prehled-list">' + rowsHtml + '</div>' +
-      '<div style="font-size:11px;color:#5a6169;margin-top:10px;">Kliknutím na řádek zobrazíte hráče, kterým daný krok chybí; kliknutím na kategorii jen hráče z ní. Výběr kategorií vlevo zúží celý přehled.</div>';
+      '<div style="font-size:11px;color:#5a6169;margin-top:10px;">Kliknutím na řádek zobrazíte hráče, kterým daný krok chybí; kliknutím na kategorii jen hráče z ní. Výběr kategorií vlevo zúží celý přehled.</div></div>';
   }
 
   // ---------- Nastavení (přehled kategorií/checklistu, import nových hráčů z KIS) ----------
@@ -5499,11 +5517,11 @@
       '<div class="loading">Žádní hráči neodpovídají filtru.</div>';
 
     var ckFilterTxt = state.checklistKey ? ((state.checklistStatus === 'splneno' ? 'splněno: ' : 'chybí: ') + (CHECKLIST_LABELS[state.checklistKey] || state.checklistKey)) : (state.missingAnyStep ? 'hráči, kterým něco chybí' : '');
-    return '<div class="header"><h1>Aktivní hráči</h1><div class="header-tools-slot"></div><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
+    return '<div class="list-page"><div class="header"><h1>Aktivní hráči</h1><div class="header-tools-slot"></div><div class="count">' + players.length + ' z ' + DATA.players.length + ' hráčů</div></div>' +
       (ckFilterTxt ? '<div class="ck-filter-banner">Filtr: <b>' + esc(ckFilterTxt) + '</b>' + (state.categories.length ? ' · ' + esc(state.categories.map(displayCategoryLabel).join(', ')) : '') +
         '<button type="button" onclick="state.checklistKey=\'\';state.missingAnyStep=false;renderFilterPanel();render();">&#10005; zrušit</button></div>' : '') +
       toolbar +
-      listHtml;
+      listHtml + '</div>';
   }
 
   function renderDetailView() {
@@ -5684,6 +5702,7 @@
         closeAllCombos_();
       }
     }
+    alignTopBar_();
     var slotEl = main.querySelector('.header-tools-slot');
     if (toolsEl && slotEl && isPcLayout_()) slotEl.appendChild(toolsEl);
     var catListEl = document.getElementById('catList');
