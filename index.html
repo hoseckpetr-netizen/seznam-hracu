@@ -698,7 +698,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '2. 10. 2026 – e-maily zástupců (sloučeno)';
+  var APP_VERSION = '4. 10. 2026 – obnova přihlášení';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -911,11 +911,95 @@
           return;
         }
         accessToken = resp.access_token;
+        noteTokenIssued_(resp);
         afterSignIn();
       }
     });
     return tokenClient;
   }
+
+  // ---------- Keeping the Google sign-in alive ----------
+  // A GIS access token is only valid for ~1 hour and this app has no server to refresh it, so
+  // a tab left open (typically on the phone) used to start failing with "Request had invalid
+  // authentication credentials" — e.g. the KIS import. Now:
+  //  1) every tap/click in the app checks the token's age and, if it's older than ~45 min,
+  //     silently asks Google for a fresh one (inside the tap, so no popup blocker interferes);
+  //  2) every call to a Google API waits for a fresh token if the current one has expired, and
+  //     if Google still answers 401, refreshes once and retries the same request.
+  var tokenExpiresAt_ = 0;
+  var tokenRefreshPromise_ = null;
+  function noteTokenIssued_(resp) {
+    var secs = Number(resp && resp.expires_in) || 3600;
+    tokenExpiresAt_ = Date.now() + secs * 1000;
+  }
+  function refreshAccessToken_() {
+    if (tokenRefreshPromise_) return tokenRefreshPromise_;
+    if (!gisReady()) return Promise.reject(new Error('Google přihlašovací služba není načtená.'));
+    tokenRefreshPromise_ = new Promise(function(resolve, reject) {
+      var client = ensureTokenClient();
+      var origCb = client.callback;
+      var timer = setTimeout(function() { client.callback = origCb; reject(new Error('timeout')); }, 20000);
+      client.callback = function(resp) {
+        clearTimeout(timer);
+        client.callback = origCb;
+        if (resp && resp.access_token) {
+          accessToken = resp.access_token;
+          noteTokenIssued_(resp);
+          resolve(accessToken);
+        } else {
+          reject(new Error((resp && resp.error) || 'refresh failed'));
+        }
+      };
+      var req = { prompt: '' };
+      try { var em = localStorage.getItem(LAST_EMAIL_KEY); if (em) req.hint = em; } catch (e) {}
+      client.requestAccessToken(req);
+    });
+    var done = function() { tokenRefreshPromise_ = null; };
+    tokenRefreshPromise_.then(done, done);
+    return tokenRefreshPromise_;
+  }
+  function tokenNeedsRefresh_(marginMs) {
+    return !!accessToken && tokenExpiresAt_ > 0 && Date.now() > tokenExpiresAt_ - marginMs;
+  }
+  // (1) refresh inside a user gesture when the token is getting old (>45 min)
+  document.addEventListener('pointerdown', function() {
+    if (tokenNeedsRefresh_(15 * 60 * 1000)) refreshAccessToken_().catch(function() {});
+  }, true);
+  // (2) transparent retry for every Google API call made with fetch(...)
+  (function() {
+    var origFetch = window.fetch.bind(window);
+    function isGoogleApi(url) { return /^https:\/\/[a-z0-9.-]*googleapis\.com\//i.test(url); }
+    function withToken(opts) {
+      if (!opts || !opts.headers || !accessToken) return opts;
+      var h = opts.headers;
+      if (typeof Headers !== 'undefined' && h instanceof Headers) {
+        if (h.has('Authorization')) h.set('Authorization', 'Bearer ' + accessToken);
+      } else if (h.Authorization || h.authorization) {
+        h = Object.assign({}, h);
+        if (h.authorization) delete h.authorization;
+        h.Authorization = 'Bearer ' + accessToken;
+        opts = Object.assign({}, opts, { headers: h });
+      }
+      return opts;
+    }
+    function expiredResponse() {
+      return new Response(JSON.stringify({ error: { code: 401, message: 'Přihlášení ke Googlu vypršelo. Klepněte kamkoli do aplikace (obnoví se) a akci zopakujte, případně stránku znovu načtěte.' } }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    window.fetch = function(input, opts) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (!isGoogleApi(url) || !opts || !opts.headers) return origFetch(input, opts);
+      var pre = tokenNeedsRefresh_(60 * 1000) ? refreshAccessToken_().catch(function() {}) : Promise.resolve();
+      return pre.then(function() {
+        return origFetch(input, withToken(opts));
+      }).then(function(r) {
+        if (r.status !== 401) return r;
+        return refreshAccessToken_().then(function() {
+          return origFetch(input, withToken(opts)).then(function(r2) { return r2.status === 401 ? expiredResponse() : r2; });
+        }, function() { return expiredResponse(); });
+      });
+    };
+  })();
 
   function signIn() {
     document.getElementById('signinError').textContent = '';
@@ -949,6 +1033,7 @@
         req.callback = function(resp) {
           if (resp && resp.access_token) {
             accessToken = resp.access_token;
+            noteTokenIssued_(resp);
             afterSignIn();
           }
           // Silent failure is routine (no active session, consent not yet granted, third-party
