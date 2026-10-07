@@ -698,7 +698,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '4. 10. 2026 – obnova přihlášení';
+  var APP_VERSION = '7. 10. 2026 – úvodní e-mail z karty hráče';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -5535,9 +5535,15 @@
       });
     });
   }
-  function confirmSendWelcomeEmail(sheetRow) {
+  // source: 'player' = a row in "Seznam" (button on the player card), otherwise a row in
+  // "Čekající" (Noví uživatelé). Same e-mail, same template and attachments either way.
+  function welcomeEmailSubject_(sheetRow, source) {
+    var list = source === 'player' ? (DATA.players || []) : (DATA.pending || []);
+    return list.find(function(x) { return x.sheetRow === sheetRow; }) || null;
+  }
+  function confirmSendWelcomeEmail(sheetRow, source) {
     if (!DATA || DATA.role !== 'admin') return;
-    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    var p = welcomeEmailSubject_(sheetRow, source);
     if (!p) return;
     var to = (p.zastupceEmail || p.emailHrac || '').trim();
     if (!to) {
@@ -5549,13 +5555,13 @@
       '<div style="font-size:13px;margin-bottom:18px;">Odeslat uvítací e-mail na <b>' + esc(to) + '</b> (' + esc(p.jmenoCele) + ') z adresy ' + esc(FROM_EMAIL) + ', s přílohami ze složky "' + esc(WELCOME_FOLDER_NAME) + '"?</div>' +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
-        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applySendWelcomeEmail_(' + sheetRow + ')">Odeslat</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applySendWelcomeEmail_(' + sheetRow + ', \'' + (source === 'player' ? 'player' : 'pending') + '\')">Odeslat</button>' +
       '</div>';
     document.getElementById('modalOverlay').classList.add('open');
   }
-  function applySendWelcomeEmail_(sheetRow) {
+  function applySendWelcomeEmail_(sheetRow, source) {
     if (!DATA || DATA.role !== 'admin') return;
-    var p = (DATA.pending || []).find(function(x) { return x.sheetRow === sheetRow; });
+    var p = welcomeEmailSubject_(sheetRow, source);
     if (!p) return;
     pushNotification('Odesílám uvítací e-mail pro ' + p.jmenoCele + '…', 'info');
     sendWelcomeEmail_(p).then(function() {
@@ -5712,6 +5718,7 @@
       '<div class="detail-actions" style="margin-bottom:18px;">' +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="openEditModal(' + p.sheetRow + ')">Editovat</button>' : '') +
           '<button class="icon-btn toolbar-btn" onclick="openShareOptionsModal_([DATA.players.find(function(x){return x.sheetRow===' + p.sheetRow + ';})])">Sdílet kartu</button>' +
+          (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmSendWelcomeEmail(' + p.sheetRow + ', \'player\')">Úvodní e-mail</button>' : '') +
           (isAdmin ? '<button class="icon-btn toolbar-btn" onclick="confirmMoveToVyrazeni(' + p.sheetRow + ')">Do vyřazených</button>' : '') +
           (isAdmin ? '<button class="icon-btn toolbar-btn" style="color:var(--red);" onclick="confirmDeletePlayerPermanently(' + p.sheetRow + ')">Smazat trvale</button>' : '') +
       '</div>' +
