@@ -698,7 +698,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '7. 10. 2026 – úvodní e-mail z karty hráče';
+  var APP_VERSION = '8. 10. 2026 – uložení úprav jedním klikem';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2964,10 +2964,13 @@
       '<div id="editDiffArea"></div>' +
       '<div class="modal-actions">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
-        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="reviewEdits(' + p.sheetRow + ')">Zkontrolovat a uložit</button>' +
+        '<button class="icon-btn toolbar-btn" id="editSaveBtn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="reviewEdits(' + p.sheetRow + ')">Uložit</button>' +
       '</div>';
   }
-  function reviewEdits(sheetRow) {
+  // One click saves. Only when the check finds something suspicious (bad e-mail, phone, …) does
+  // it stop, list the warnings and turn the same button into "Uložit i tak" — no separate
+  // confirmation row, so a normal edit is Editovat → Uložit.
+  function reviewEdits(sheetRow, force) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
@@ -2985,17 +2988,33 @@
       area.innerHTML = '<div class="diff-summary">Žádné změny k uložení.</div>';
       return;
     }
-    var warnings = validatePlayerData_(p, changes);
-    area.innerHTML = '<div class="diff-summary"><b>Zkontrolujte změny:</b>' +
+    var warnings = force ? [] : validatePlayerData_(p, changes);
+    var diffHtml = '<div class="diff-summary"><b>Změny:</b>' +
       keys.map(function(k) {
         return '<div>' + esc(EDIT_FIELD_LABELS[k] || k) + ': "' + esc(p[k] || '—') + '" → "' + esc(changes[k] || '—') + '"</div>';
-      }).join('') + '</div>' +
-      (warnings.length ? '<div class="diff-warn"><b>&#9888; Zkontrolujte prosím:</b>' + warnings.map(function(w) { return '<div>• ' + esc(w) + '</div>'; }).join('') + '<div style="margin-top:4px;opacity:.8;">Můžete opravit a dát znovu „Zkontrolovat a uložit“, nebo uložit i tak.</div></div>' : '') +
-      '<div class="modal-actions">' +
-        '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
-        '<button class="icon-btn toolbar-btn" id="confirmSaveBtn" style="background:' + (warnings.length ? '#FBBF24;color:#1a1300;border-color:#FBBF24' : 'var(--accent);color:#06181a;border-color:var(--accent)') + ';">' + (warnings.length ? 'Uložit i tak' : 'Potvrdit a uložit') + '</button>' +
-      '</div>';
-    document.getElementById('confirmSaveBtn').onclick = function() { saveEditsToSheet(sheetRow, changes); };
+      }).join('') + '</div>';
+    var btn = document.getElementById('editSaveBtn');
+    if (!warnings.length) {
+      area.innerHTML = diffHtml;
+      if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+      saveEditsToSheet(sheetRow, changes);
+      return;
+    }
+    area.innerHTML = diffHtml +
+      '<div class="diff-warn"><b>&#9888; Zkontrolujte prosím:</b>' + warnings.map(function(w) { return '<div>• ' + esc(w) + '</div>'; }).join('') +
+      '<div style="margin-top:4px;opacity:.8;">Opravte údaj a dejte znovu „Uložit“, nebo uložte i tak.</div></div>';
+    if (btn) {
+      btn.textContent = 'Uložit i tak';
+      btn.style.cssText = 'background:#FBBF24;color:#1a1300;border-color:#FBBF24;';
+      btn.onclick = function() { reviewEdits(sheetRow, true); };
+      // Changing any field again goes back to a normal checked save.
+      var reset = function() {
+        btn.textContent = 'Uložit';
+        btn.style.cssText = 'background:var(--accent);color:#06181a;border-color:var(--accent);';
+        btn.onclick = function() { reviewEdits(sheetRow); };
+      };
+      document.querySelectorAll('#modalBox input, #modalBox textarea').forEach(function(el) { el.addEventListener('input', reset, { once: true }); });
+    }
   }
   // Adds a "Poznámka" column at the very end of a sheet ("Seznam" by default, or "Vyřazené"
   // when moving a player there) — a brand-new grid column, so no existing data can be
@@ -3070,8 +3089,9 @@
       render();
       syncEditedPhonesToContacts_(p, changes, old);
     }).catch(function(err) {
-      area.innerHTML = '<div class="diff-summary" style="color:var(--red);">Uložení selhalo: ' + esc(err.message) + '</div>' +
-        '<div class="modal-actions"><button class="icon-btn toolbar-btn" onclick="closeModal()">Zavřít</button></div>';
+      area.innerHTML = '<div class="diff-summary" style="color:var(--red);">Uložení selhalo: ' + esc(err.message) + '</div>';
+      var sb = document.getElementById('editSaveBtn');
+      if (sb) { sb.disabled = false; sb.textContent = 'Zkusit znovu'; sb.onclick = function() { reviewEdits(sheetRow, true); }; }
       pushNotification('Uložení změn u hráče ' + p.jmenoCele + ' selhalo: ' + err.message, 'error');
     });
   }
