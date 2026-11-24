@@ -258,6 +258,20 @@
     .share-field-row { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 7px 2px; border-bottom: 1px solid #20242a; cursor: pointer; }
     .share-field-row:last-child { border-bottom: none; }
     .share-field-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+    .mv-player { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #14181d; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; }
+    .mv-ring { width: 46px; height: 46px; flex-shrink: 0; }
+    .mv-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mv-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .mv-points { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin-bottom: 14px; }
+    .mv-points .mv-ico { display: inline-block; width: 20px; color: var(--muted); }
+    .mv-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 7px; }
+    .mv-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .mv-reason input { position: absolute; opacity: 0; pointer-events: none; }
+    .mv-reason span { display: inline-block; font-size: 12px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); cursor: pointer; transition: border-color .12s ease, color .12s ease, background .12s ease; }
+    .mv-reason span:hover { border-color: #3a4450; color: var(--text); }
+    .mv-reason input:checked + span { border-color: var(--red); color: var(--text); background: rgba(248,113,113,0.12); }
+    .mv-text { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: #14181d; color: var(--text); font-family: inherit; font-size: 13px; }
+    .mv-text:focus { outline: none; border-color: var(--accent); }
     .diff-summary { font-size: 12px; background: #12151a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
     .diff-summary div { padding: 2px 0; }
     .diff-summary b { color: var(--accent); }
@@ -698,7 +712,7 @@
   // for the new player and their guardian (under whichever account approves the import).
   // Shown in Nastavení — lets us tell at a glance whether a device is still running an older
   // cached copy of the app. Bump on every deploy.
-  var APP_VERSION = '8. 10. 2026 – uložení úprav jedním klikem';
+  var APP_VERSION = '24. 11. 2026 – nové okno přesunu do vyřazených';
   var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/gmail.send';
   // "Můj disk / FK Slovany Pardubice / Fotky hráčů" on hoseck.petr@gmail.com.
   // Files are named "Příjmení Jméno.<ext>" — matched against each player's prijmeni+jmeno.
@@ -2612,21 +2626,48 @@
     });
   }
 
+  var VYRAZENI_REASONS_ = ['Ukončil činnost', 'Přestup do jiného klubu', 'Přestěhování', 'Zdravotní důvody', 'Neplacení příspěvků', 'Jiné'];
   function confirmMoveToVyrazeni(sheetRow) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p) return;
+    var chips = VYRAZENI_REASONS_.map(function(r, i) {
+      return '<label class="mv-reason"><input type="radio" name="mvReason" value="' + esc(r) + '"' + (i === 0 ? '' : '') + '><span>' + esc(r) + '</span></label>';
+    }).join('');
     document.getElementById('modalBox').innerHTML =
-      '<h2>Potvrzení</h2>' +
-      '<div style="font-size:13px;margin-bottom:18px;">Přesunout <b>' + esc(p.jmenoCele) + '</b> do "Vyřazení hráči"? Řádek zmizí ze "Seznam" a objeví se ve Vyřazených se základními kontaktními údaji (checklist Vyřazených začíná nezaškrtnutý — sleduje jiné kroky než checklist registrace). Pro návrat do klubu ho pak bude potřeba znovu ručně přidat.</div>' +
-      '<div class="modal-actions">' +
+      '<h2 style="margin-bottom:14px;">Přesunout do vyřazených?</h2>' +
+      '<div class="mv-player">' +
+        '<div class="ring mv-ring" style="' + ringStyle(0) + '"><div class="ring-hole">' + avatarInnerHtml(p, 96) + '</div></div>' +
+        '<div style="min-width:0;">' +
+          '<div class="mv-name">' + esc(p.jmenoCele) + '</div>' +
+          '<div class="mv-meta">' +
+            (p.categoryGroup ? '<span class="cat-pill" style="background:' + esc(p.categoryColor) + ';color:' + esc(contrastTextColor_(p.categoryColor)) + ';font-size:10.5px;padding:1px 8px;">' + esc(displayCategoryLabel(p.categoryGroup)) + '</span>' : '') +
+            (p.datumNarozeni ? '<span>nar. ' + esc(p.datumNarozeni) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mv-points">' +
+        '<div><span class="mv-ico">&#8594;</span>Zmizí ze seznamu, uloží se mezi Vyřazené</div>' +
+        '<div><span class="mv-ico">&#8634;</span>Návrat do klubu = znovu ručně přidat</div>' +
+      '</div>' +
+      '<div class="mv-label">Důvod vyřazení <span style="opacity:.6;">(nepovinné)</span></div>' +
+      '<div class="mv-reasons">' + chips + '</div>' +
+      '<input type="text" id="mvReasonText" class="mv-text" placeholder="Doplňující poznámka (nepovinné)" autocomplete="off">' +
+      '<div class="modal-actions" style="margin-top:16px;">' +
         '<button class="icon-btn toolbar-btn" onclick="closeModal()">Zrušit</button>' +
-        '<button class="icon-btn toolbar-btn" style="background:var(--accent);color:#06181a;border-color:var(--accent);" onclick="closeModal();applyMoveToVyrazeni_(' + sheetRow + ')">Přesunout</button>' +
+        '<button class="icon-btn toolbar-btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="submitMoveToVyrazeni_(' + sheetRow + ')">Přesunout</button>' +
       '</div>';
     document.getElementById('modalOverlay').classList.add('open');
   }
+  function submitMoveToVyrazeni_(sheetRow) {
+    var sel = document.querySelector('input[name="mvReason"]:checked');
+    var txt = (document.getElementById('mvReasonText') || {}).value || '';
+    var reason = [sel ? sel.value : '', txt.trim()].filter(Boolean).join(' – ');
+    closeModal();
+    applyMoveToVyrazeni_(sheetRow, reason);
+  }
 
-  function applyMoveToVyrazeni_(sheetRow) {
+  function applyMoveToVyrazeni_(sheetRow, reason) {
     if (!DATA || DATA.role !== 'admin') return;
     var p = DATA.players.find(function(x) { return x.sheetRow === sheetRow; });
     if (!p || !DATA.vyrazeniColIndex) return;
@@ -2659,8 +2700,10 @@
     put('zastupceEmail', p.zastupceEmail);
     if (!dataArr.length) return;
 
-    (p.poznamka ? ensureNoteColumn_('Vyřazené').then(function(noteCol) {
-      dataArr.push({ range: 'Vyřazené!' + colIndexToLetter(noteCol) + targetRow, values: [["'" + p.poznamka]] });
+    // The chosen reason goes in front of any existing note, in the Vyřazené "Poznámka" column.
+    var note = [reason ? 'Důvod vyřazení: ' + reason : '', p.poznamka || ''].filter(Boolean).join('\n');
+    (note ? ensureNoteColumn_('Vyřazené').then(function(noteCol) {
+      dataArr.push({ range: 'Vyřazené!' + colIndexToLetter(noteCol) + targetRow, values: [["'" + note]] });
     }) : Promise.resolve()).then(function() {
     return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values:batchUpdate', {
       method: 'POST',
@@ -2674,7 +2717,7 @@
       return deleteSeznamRow_(p.sheetRow);
     }).then(function() {
       pushNotification('Hráč ' + p.jmenoCele + ' byl přesunut do Vyřazených.', 'info');
-      logHistory_(p, 'Přesun do Vyřazených', []);
+      logHistory_(p, 'Přesun do Vyřazených' + (reason ? ' (' + reason + ')' : ''), []);
       state.view = 'list';
       state.selectedRow = null;
       loadData();
